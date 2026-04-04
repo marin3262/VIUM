@@ -1,0 +1,27 @@
+# --- Frontend ---
+vium-web/node_modules/
+vium-web/dist/
+vium-web/.env*
+
+# --- Backend ---
+vium-backend/__pycache__/
+vium-backend/*.pyc
+vium-backend/.venv/
+vium-backend/venv/
+vium-backend/vium.db
+vium-backend/.env
+
+# --- Virtual Environment (Root) ---
+.venv/
+venv/
+
+# --- Exclude as requested ---
+logs/
+*.pdf
+*.png
+*.txt
+websocket-demo/
+
+# --- System ---
+.DS_Store
+Thumbs.db
