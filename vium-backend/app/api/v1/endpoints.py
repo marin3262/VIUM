@@ -8,12 +8,32 @@ from ...db.session import get_db
 from ...models import models
 from ...schemas import schemas
 
+from ...db.redis_client import get_station_slots
+
 router = APIRouter()
 
 @router.get("/stations", response_model=List[schemas.Station])
 def read_stations(db: Session = Depends(get_db)):
-    """전체 충전소 목록을 조회합니다."""
-    return db.query(models.Station).all()
+    """
+    전체 충전소 목록을 조회합니다. 
+    잔여석 정보(availableSlots)는 Redis에서 실시간으로 가져와 결합합니다.
+    """
+    stations = db.query(models.Station).all()
+    
+    # 실시간 데이터 결합을 위해 결과 리스트 생성
+    result = []
+    for station in stations:
+        # 1. DB 객체를 딕셔너리로 변환 (원본 DB 데이터 보호)
+        station_data = schemas.Station.from_orm(station).dict()
+        
+        # 2. Redis에서 실시간 잔여석 정보 조회 (없으면 DB의 기본값 유지)
+        realtime_slots = get_station_slots(station.id, default_val=station.availableSlots)
+        
+        # 3. 실시간 데이터로 업데이트
+        station_data["availableSlots"] = realtime_slots
+        result.append(station_data)
+        
+    return result
 
 @router.get("/users/me", response_model=schemas.UserProfile)
 def read_user_me(db: Session = Depends(get_db)):

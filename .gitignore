@@ -1,27 +1,17 @@
-# --- Frontend ---
-vium-web/node_modules/
-vium-web/dist/
-vium-web/.env*
-
-# --- Backend ---
-vium-backend/__pycache__/
-vium-backend/*.pyc
-vium-backend/.venv/
-vium-backend/venv/
-vium-backend/vium.db
-vium-backend/.env
-
-# --- Virtual Environment (Root) ---
-.venv/
-venv/
-
-# --- Exclude as requested ---
-logs/
-*.pdf
-*.png
-*.txt
-websocket-demo/
-
-# --- System ---
+# General
+node_modules/
 .DS_Store
-Thumbs.db
+dist/
+build/
+.env
+.venv/
+__pycache__/
+
+# VIUM Database (Docker & SQLite)
+vium-backend/.env
+vium-backend/vium.db
+vium-backend/docker/
+*.db
+
+# Gemini Logs (Optional)
+logs/*.log

@@ -1,5 +1,6 @@
 from app.db.session import SessionLocal, engine, Base
 from app.models import models
+from app.db.redis_client import update_station_slots
 import random
 
 # 테이블 초기화
@@ -93,6 +94,8 @@ def seed():
     
     for s in stations:
         db.add(s)
+        # [실시간 연동] Redis에도 초기 잔여석 정보를 동기화
+        update_station_slots(s.id, s.availableSlots)
     
     # 3. 초기 리뷰
     db.add(models.Review(
@@ -101,7 +104,7 @@ def seed():
     ))
 
     db.commit()
-    print("Database seeded successfully with CORRECT CamelCase format!")
+    print("Database and Redis seeded successfully!")
 
 if __name__ == "__main__":
     seed()

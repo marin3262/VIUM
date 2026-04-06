@@ -1,14 +1,27 @@
+import os
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# 프로토타입용 SQLite DB (향후 MariaDB/PostgreSQL로 전환 용이)
-SQLALCHEMY_DATABASE_URL = "sqlite:///./vium.db"
+# .env 파일 로드
+load_dotenv()
 
-# SQLite 특성상 check_same_thread=False 설정 필요
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-)
+# 데이터베이스 연결 URL (기본값은 SQLite로 두어 최소한의 안전장치 마련)
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./vium.db")
+
+# MariaDB/MySQL 연결 시 'pool_pre_ping'을 설정하여 연결 끊김 방지 (안정성 강화)
+if SQLALCHEMY_DATABASE_URL.startswith("mysql"):
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL, 
+        pool_pre_ping=True,
+        pool_recycle=3600
+    )
+else:
+    # SQLite 호환성 유지 (필요 시)
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
