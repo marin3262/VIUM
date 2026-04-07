@@ -1,6 +1,7 @@
-import React from 'react';
-import { X, MapPin, MessageSquare, Star, Clock, Zap, ArrowDown, AlertTriangle } from 'lucide-react';
-import { ChargingStation } from '../../types';
+import React, { useMemo } from 'react';
+import { X, MapPin, Zap, Clock, ShieldAlert, Navigation, Star, TrendingUp, MessageSquare, AlertCircle } from 'lucide-react';
+import type { ChargingStation } from '../../types';
+import { useStationStore } from '../../store/stationStore';
 
 interface StationModalProps {
   station: ChargingStation | null;
@@ -11,107 +12,172 @@ interface StationModalProps {
 export const StationModal: React.FC<StationModalProps> = ({ station, onClose, onStartCharging }) => {
   if (!station) return null;
 
-  // 데이터 부재 시를 대비한 기본값 처리
-  const priceHistory = station.priceHistory || Array(24).fill(station.price || 0);
-  const maxPrice = Math.max(...priceHistory);
-  const minPrice = Math.min(...priceHistory);
-  const range = maxPrice - minPrice || 1;
-  
-  const points = priceHistory.map((p, i) => {
-    const x = (i / 23) * 100;
-    const y = 100 - ((p - minPrice) / range) * 80 - 10;
-    return `${x},${y}`;
-  }).join(' ');
+  const { getAvailableSlots } = useStationStore();
+  const availableSlots = getAvailableSlots(station);
+  const totalSlots = station.chargers.length;
 
-  // --- 버튼 상태 제어 로직 ---
-  const isAvailable = station.status === 'Available';
-  const isFaulty = station.status === 'Faulty';
-  const isFull = station.availableSlots === 0;
+  // 1. 고장난 충전기 식별 로직
+  const faultyChargers = useMemo(() => 
+    station.chargers.filter(c => c.status === 'Faulty'),
+    [station.chargers]
+  );
+
+  // 버튼 텍스트 동적 결정 로직
+  let buttonText = '충전 시작하기';
+  if (availableSlots === 0) {
+    if (faultyChargers.length === totalSlots) {
+      buttonText = '현재 점검 중입니다';
+    } else if (faultyChargers.length > 0) {
+      buttonText = '만차 (일부 점검 중)';
+    } else {
+      buttonText = '충전기 만차';
+    }
+  }
+
+  // 2. 요금 그래프 데이터 로직
+  const displayPriceHistory = useMemo(() => {
+    let history = station.priceHistory;
+    if (typeof history === 'string') {
+      try { history = JSON.parse(history); } catch (e) { history = []; }
+    }
+    if (!Array.isArray(history) || history.length < 24) {
+      const base = station.price || 300;
+      return Array.from({ length: 24 }, (_, i) => {
+        if (i <= 6) return base - 60; 
+        if (i >= 11 && i <= 15) return base + 50;
+        return base + (i % 2 === 0 ? 15 : -15);
+      });
+    }
+    return history;
+  }, [station.priceHistory, station.price]);
+
+  const minPrice = Math.min(...displayPriceHistory);
+  const maxPrice = Math.max(...displayPriceHistory);
+  const priceRange = (maxPrice - minPrice) || 100;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center p-0 sm:p-4 animate-in fade-in duration-300">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="relative bg-white w-full max-w-xl rounded-t-[40px] sm:rounded-[40px] shadow-2xl overflow-hidden animate-in slide-in-from-bottom duration-500">
-        <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mt-4 mb-2 sm:hidden"></div>
-        <div className="p-6 sm:p-8 max-h-[85vh] overflow-y-auto no-scrollbar">
-          <div className="flex justify-between items-start mb-6">
-            <div>
-              <h2 className="text-2xl font-black text-gray-900 leading-tight mb-2">{station.name}</h2>
-              <p className="text-gray-400 text-sm flex items-center gap-1"><MapPin size={14} /> {station.address}</p>
-            </div>
-            <button onClick={onClose} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"><X size={20} className="text-gray-500" /></button>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
+      <div className="bg-white w-full max-w-lg rounded-t-[40px] sm:rounded-[40px] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-10 duration-500 max-h-[95vh] flex flex-col">
+        {/* Header */}
+        <div className="relative h-40 sm:h-48 bg-gradient-to-br from-blue-600 to-indigo-700 p-8 flex flex-col justify-end shrink-0">
+          <button onClick={onClose} className="absolute top-6 right-6 p-2 bg-white/20 hover:bg-white/30 rounded-full text-white transition-all"><X size={20} /></button>
+          <div className="space-y-1">
+            <h2 className="text-2xl font-black text-white">{station.station_name}</h2>
+            <p className="text-blue-100/80 text-xs flex items-center gap-1"><MapPin size={12} /> {station.address}</p>
           </div>
+        </div>
 
-          <div className="bg-gray-50 rounded-3xl p-6 mb-8 border border-gray-100">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-sm flex items-center gap-2 text-gray-700"><ArrowDown size={16} className="text-blue-500" /> 오늘의 요금 트렌드</h3>
-              <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg">현재 {station.price}원</span>
-            </div>
-            <div className="h-24 w-full relative">
-              <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full">
-                <line x1="0" y1="50" x2="100" y2="50" stroke="#E5E7EB" strokeWidth="0.5" strokeDasharray="2,2" />
-                <defs><linearGradient id="grad" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style={{ stopColor: '#3B82F6', stopOpacity: 0.2 }} /><stop offset="100%" style={{ stopColor: '#3B82F6', stopOpacity: 0 }} /></linearGradient></defs>
-                <path d={`M 0,100 L ${points} L 100,100 Z`} fill="url(#grad)" />
-                <polyline fill="none" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" points={points} />
-              </svg>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className={`p-4 rounded-3xl text-center ${isFaulty ? 'bg-red-50' : 'bg-blue-50'}`}>
-              <p className={`text-[10px] font-bold uppercase mb-1 ${isFaulty ? 'text-red-400' : 'text-blue-400'}`}>상태</p>
-              <p className={`text-sm font-black ${isFaulty ? 'text-red-700' : 'text-blue-700'}`}>{isFaulty ? '점검중' : '정상'}</p>
-            </div>
-            <div className={`p-4 rounded-3xl text-center ${isFull && isAvailable ? 'bg-orange-50' : 'bg-green-50'}`}>
-              <p className={`text-[10px] font-bold uppercase mb-1 ${isFull && isAvailable ? 'text-orange-400' : 'text-green-400'}`}>잔여석</p>
-              <p className={`text-sm font-black ${isFull && isAvailable ? 'text-orange-700' : 'text-green-700'}`}>{station.availableSlots} / {station.totalSlots}</p>
-            </div>
-            <div className="bg-yellow-50 p-4 rounded-3xl text-center"><p className="text-[10px] font-bold text-yellow-400 uppercase mb-1">단가</p><p className="text-sm font-black text-yellow-700">{station.price}원</p></div>
-          </div>
-
-          {!isAvailable && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-red-600 animate-pulse">
-              <AlertTriangle size={20} />
-              <p className="text-xs font-bold">
-                {isFaulty ? '현재 고장/점검 중인 충전소입니다. 이용이 불가능합니다.' : '현재 모든 충전기가 사용 중입니다.'}
-              </p>
+        <div className="p-6 space-y-6 overflow-y-auto no-scrollbar">
+          {/* 고장 충전기 안내 메시지 섹션 */}
+          {faultyChargers.length > 0 && (
+            <div className="bg-red-50 border border-red-100 rounded-[24px] p-5 flex items-start gap-4 animate-pulse">
+              <div className="bg-red-100 p-2 rounded-xl text-red-600">
+                <AlertCircle size={20} />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-red-900">충전기 이용 제한 안내</h4>
+                <p className="text-xs text-red-700 mt-1 leading-relaxed">
+                  현재 <span className="font-black underline">{faultyChargers.map(c => c.charger_id.split('_').pop() + '호기').join(', ')}</span>가 고장으로 인해 점검 중입니다. 해당 구역을 제외하고 이용해 주세요.
+                </p>
+              </div>
             </div>
           )}
 
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="font-bold text-lg flex items-center gap-2"><MessageSquare size={18} className="text-blue-500" />사용자 리뷰</h3>
-              <div className="flex gap-4">
-                <button onClick={() => (window as any).openReportModal?.(station)} className="text-xs text-red-500 font-bold bg-red-50 px-3 py-1 rounded-full">고장 제보</button>
-                <span className="text-sm text-blue-600 font-bold">리뷰 보기</span>
-              </div>
+          {/* Status Grid */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-blue-50 p-3 rounded-2xl border border-blue-100 flex flex-col items-center">
+              <Zap className="text-blue-600 mb-1" size={18} />
+              <p className="text-[9px] font-bold text-blue-400 uppercase">잔여석</p>
+              <p className="text-sm font-black text-blue-700">{availableSlots}/{totalSlots}</p>
             </div>
-            <div className="space-y-3">
-              {station.reviews?.length > 0 ? (
-                station.reviews.map(review => (
-                  <div key={review.id} className="bg-gray-50 p-4 rounded-2xl">
-                    <div className="flex justify-between mb-2"><span className="text-sm font-bold text-gray-700">{review.user_name || review.user}</span><div className="flex items-center gap-1 text-yellow-400"><Star size={12} fill="currentColor" /><span className="text-xs font-bold">{review.rating}</span></div></div>
-                    <p className="text-sm text-gray-600 mb-2">{review.content}</p>
-                    <div className="flex items-center gap-1 text-gray-400"><Clock size={12} /><span className="text-[10px]">{new Date(review.date).toLocaleDateString() === 'Invalid Date' ? review.date : new Date(review.date).toLocaleDateString()}</span></div>
-                  </div>
-                ))
-              ) : (
-                <p className="text-center py-8 text-gray-400 text-sm italic">아직 작성된 리뷰가 없습니다.</p>
-              )}
+            <div className="bg-orange-50 p-3 rounded-2xl border border-orange-100 flex flex-col items-center">
+              <Star className="text-orange-500 mb-1" size={18} fill="currentColor" />
+              <p className="text-[9px] font-bold text-orange-400 uppercase">평점</p>
+              <p className="text-sm font-black text-orange-700">4.8</p>
+            </div>
+            <div className="bg-green-50 p-3 rounded-2xl border border-green-100 flex flex-col items-center">
+              <Navigation className="text-green-600 mb-1" size={18} />
+              <p className="text-[9px] font-bold text-green-400 uppercase">거리</p>
+              <p className="text-sm font-black text-green-700">{station.distance || '0.8km'}</p>
             </div>
           </div>
 
-          <div className="mt-8">
-            <button 
-              disabled={!isAvailable || isFull}
-              onClick={onStartCharging} 
-              className={`w-full py-5 rounded-3xl text-lg font-black shadow-xl transition-all flex items-center justify-center gap-3 active:scale-95 ${
-                (!isAvailable || isFull) ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none' : 'bg-blue-600 text-white shadow-blue-100 hover:bg-blue-700'
-              }`}
-            >
-              {isFaulty ? '충전 불가 (점검 중)' : isFull ? '빈 자리가 없습니다' : (
-                <><Zap size={24} fill="currentColor" /> 충전 시작하기</>
-              )}
+          {/* 스펙 및 성공 정보 (누락 복구) */}
+          <div className="bg-gray-50 rounded-[32px] p-5 space-y-4 border border-gray-100">
+            <div className="flex justify-between items-center pb-4 border-b border-gray-200/50">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm text-blue-500"><Zap size={16} /></div>
+                <p className="text-sm font-bold text-gray-700">충전기 스펙</p>
+              </div>
+              <div className="text-right">
+                {station.chargers?.map(c => (
+                  <p key={c.charger_id} className="text-xs font-black text-gray-900 mb-1">
+                    {c.charger_id.split('_').pop()}호기: {c.charger_type} ({c.connector_type})
+                  </p>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm text-orange-500"><Clock size={16} /></div>
+                <p className="text-sm font-bold text-gray-700">마지막 작동</p>
+              </div>
+              <p className="text-xs font-black text-gray-900">{station.lastSuccessTime || '15분 전'}</p>
+            </div>
+          </div>
+
+          {/* 요금 그래프 */}
+          <div className="space-y-4 bg-gray-50 p-5 rounded-[32px] border border-gray-100">
+            <div className="flex justify-between items-end">
+              <h3 className="text-sm font-black text-gray-900 flex items-center gap-2"><TrendingUp size={16} className="text-blue-500" /> 24시간 요금 추이</h3>
+              <p className="text-lg font-black text-blue-600">{station.price}원<span className="text-[10px] font-normal text-gray-400 ml-1">/kWh</span></p>
+            </div>
+            
+            <div className="h-28 flex items-end justify-between gap-[2px] px-1 pt-2">
+              {displayPriceHistory.map((p, i) => {
+                const rawHeight = ((p - minPrice) / priceRange) * 100;
+                const heightValue = Math.max(Math.floor(rawHeight), 8); // 최소 높이 8% 확보
+                const isCurrentHour = i === new Date().getHours();
+                
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center group relative h-full justify-end">
+                    {/* 막대 자체에 물리적 width 보장 */}
+                    <div 
+                      style={{ 
+                        height: `${heightValue}%`,
+                        backgroundColor: isCurrentHour ? '#2563eb' : '#bfdbfe',
+                        width: '100%',
+                        minWidth: '4px'
+                      }} 
+                      className={`rounded-t-sm transition-all duration-500 ${isCurrentHour ? 'shadow-[0_-2px_8px_rgba(37,99,235,0.4)]' : 'hover:bg-blue-300'}`}
+                    ></div>
+                    {i % 6 === 0 && <span className="absolute -bottom-5 left-0 text-[8px] font-bold text-gray-300 whitespace-nowrap">{i}시</span>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 리뷰 섹션 */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-black text-gray-900 flex items-center gap-2"><MessageSquare size={16} className="text-blue-500" /> 현장 리뷰</h3>
+            {station.reviews && station.reviews.length > 0 ? (
+              station.reviews.slice(0, 2).map((rev) => (
+                <div key={rev.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+                  <div className="flex justify-between mb-1"><p className="text-xs font-bold text-gray-700">{rev.user_name}</p><div className="flex text-yellow-400"><Star size={10} fill="currentColor" /> <span className="text-[10px] ml-0.5 font-bold text-gray-500">{rev.rating}</span></div></div>
+                  <p className="text-xs text-gray-600 leading-relaxed">{rev.content}</p>
+                </div>
+              ))
+            ) : (
+              <p className="text-center py-4 text-gray-400 text-[11px] italic bg-gray-50 rounded-2xl border border-dashed border-gray-200">아직 작성된 리뷰가 없습니다.</p>
+            )}
+          </div>
+
+          {/* Buttons */}
+          <div className="flex gap-3 pt-2">
+            <button onClick={() => (window as any).openReportModal(station)} className="flex-1 bg-white border-2 border-red-100 text-red-500 py-4 rounded-2xl text-sm font-black flex items-center justify-center gap-2 hover:bg-red-50 transition-all"><ShieldAlert size={18} /> 고장 제보</button>
+            <button onClick={onStartCharging} disabled={availableSlots === 0} className={`flex-[2] py-4 rounded-2xl text-sm font-black flex items-center justify-center gap-2 transition-all ${availableSlots > 0 ? 'bg-blue-600 text-white shadow-xl shadow-blue-100 hover:bg-blue-700' : 'bg-gray-200 text-gray-400'}`}>
+              <Zap size={18} fill="currentColor" /> {buttonText}
             </button>
           </div>
         </div>

@@ -1,22 +1,22 @@
 import { create } from 'zustand';
-import { ChargingStation, StationType, ConnectorType, Review } from '../types';
+import type { ChargingStation, ChargerType, Review } from '../types';
 import { stationService } from '../services/stationService';
 
 interface StationState {
   stations: ChargingStation[];
-  activeFilter: StationType;
-  selectedConnector: ConnectorType | 'All';
+  activeFilter: ChargerType | 'All';
+  selectedConnector: string | 'All'; // 누락되었던 필드 추가
   onlyAvailable: boolean;
   isLoading: boolean;
   
   // Actions
   fetchStations: () => Promise<void>;
-  setActiveFilter: (filter: StationType) => void;
-  setSelectedConnector: (connector: ConnectorType | 'All') => void;
+  setActiveFilter: (filter: ChargerType | 'All') => void;
+  setSelectedConnector: (connector: string | 'All') => void; // 누락되었던 액션 추가
   setOnlyAvailable: (available: boolean) => void;
-  addReview: (stationId: string, review: Review) => void; 
   
-  // Computed
+  // Computed (Helper functions)
+  getAvailableSlots: (station: ChargingStation) => number;
   getFilteredStations: () => ChargingStation[];
 }
 
@@ -45,24 +45,23 @@ export const useStationStore = create<StationState>((set, get) => ({
   setSelectedConnector: (connector) => set({ selectedConnector: connector }),
   setOnlyAvailable: (available) => set({ onlyAvailable: available }),
 
-  // [핵심 수정] 서버에서 받은 Review 객체를 그대로 stations 배열에 주입
-  addReview: (stationId, newReview) => set((state) => ({
-    stations: state.stations.map((s) => 
-      s.id === stationId 
-        ? { 
-            ...s, 
-            reviews: [newReview, ...(s.reviews || [])] 
-          } 
-        : s
-    )
-  })),
+  getAvailableSlots: (station) => {
+    return station.chargers.filter(c => c.status === 'Available').length;
+  },
 
   getFilteredStations: () => {
     const { stations, activeFilter, selectedConnector, onlyAvailable } = get();
     return stations.filter((station) => {
-      const typeMatch = activeFilter === 'All' || station.type === activeFilter;
-      const connectorMatch = selectedConnector === 'All' || station.connectorTypes?.includes(selectedConnector as ConnectorType);
-      const availableMatch = !onlyAvailable || station.status === 'Available';
+      // 1. 타입 필터링 (급속/완속)
+      const typeMatch = activeFilter === 'All' || station.chargers.some(c => c.charger_type === activeFilter);
+      
+      // 2. 커넥터 필터링 (DC Combo/Chademo 등)
+      const connectorMatch = selectedConnector === 'All' || station.chargers.some(c => c.connector_type.includes(selectedConnector));
+      
+      // 3. 이용 가능 여부 필터링
+      const availableCount = station.chargers.filter(c => c.status === 'Available').length;
+      const availableMatch = !onlyAvailable || availableCount > 0;
+      
       return typeMatch && connectorMatch && availableMatch;
     });
   },

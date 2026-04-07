@@ -1,7 +1,5 @@
 import React from 'react';
-import { Filter, Zap, CheckCircle2 } from 'lucide-react';
 import { useStationStore } from '../../store/stationStore';
-import { ConnectorType, StationType } from '../../types';
 
 export const PillFilter: React.FC = () => {
   const { 
@@ -10,72 +8,65 @@ export const PillFilter: React.FC = () => {
     onlyAvailable, setOnlyAvailable 
   } = useStationStore();
 
-  const connectorOptions: { label: string; value: ConnectorType | 'All' }[] = [
-    { label: '전체 커넥터', value: 'All' },
-    { label: 'DC 콤보', value: 'DC_Combo' },
-    { label: '차데모', value: 'Chademo' },
-    { label: 'AC3 상', value: 'AC3' },
-    { label: 'AC 5핀', value: 'Slow' },
-  ];
-
-  const typeOptions: { label: string; value: StationType }[] = [
-    { label: '전체', value: 'All' },
-    { label: '급속', value: 'Rapid' },
-    { label: '완속', value: 'Standard' },
+  const connectors = [
+    { id: 'All', label: '모든 커넥터' },
+    { id: 'DC Combo', label: 'DC 콤보' },
+    { id: 'Chademo', label: '차데모' },
+    { id: 'AC 5핀', label: 'AC 5핀 (완속)' },
+    { id: 'Slow', label: 'AC 완속' }
   ];
 
   return (
-    <div className="space-y-4 px-1">
-      {/* 1층: 충전 속도 및 필터 아이콘 */}
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-        <div className="bg-blue-600 p-2 rounded-xl text-white shrink-0">
-          <Filter size={18} />
-        </div>
-        
-        {typeOptions.map((opt) => (
+    <div className="space-y-4">
+      {/* 1. 충전 타입 필터 */}
+      <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+        {['All', '급속', '완속'].map((type) => (
           <button
-            key={opt.value}
-            onClick={() => setActiveFilter(opt.value)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-              activeFilter === opt.value 
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' 
-                : 'bg-white text-gray-400 border border-gray-100 hover:border-blue-200'
+            key={type}
+            onClick={() => setActiveFilter(type as any)}
+            className={`px-5 py-2 rounded-2xl text-xs font-bold transition-all whitespace-nowrap border ${
+              activeFilter === type 
+                ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100' 
+                : 'bg-white text-gray-500 border-gray-100 hover:border-blue-200'
             }`}
           >
-            {opt.label}
+            {type === 'All' ? '전체' : type}
           </button>
         ))}
-
-        <div className="h-6 w-[1px] bg-gray-200 mx-2 shrink-0"></div>
-
-        <button
-          onClick={() => setOnlyAvailable(!onlyAvailable)}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-            onlyAvailable 
-              ? 'bg-green-600 text-white shadow-lg shadow-green-100' 
-              : 'bg-white text-gray-400 border border-gray-100 hover:border-green-200'
-          }`}
-        >
-          <CheckCircle2 size={14} />
-          충전 가능만
-        </button>
       </div>
 
-      {/* 2층: 커넥터 상세 필터 (계획서 제안) */}
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-        {connectorOptions.map((opt) => (
+      {/* 2. 커넥터 타입 필터 */}
+      <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+        {connectors.map((conn) => (
           <button
-            key={opt.value}
-            onClick={() => setSelectedConnector(opt.value)}
-            className={`px-4 py-2 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
-              selectedConnector === opt.value 
-                ? 'bg-gray-800 text-white shadow-md' 
-                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+            key={conn.id}
+            onClick={() => setSelectedConnector(conn.id)}
+            className={`px-4 py-1.5 rounded-xl text-[11px] font-bold transition-all whitespace-nowrap border ${
+              selectedConnector === conn.id 
+                ? 'bg-gray-900 text-white border-gray-900' 
+                : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'
             }`}
           >
-            {opt.label}
+            {conn.label}
           </button>
         ))}
+      </div>
+
+      {/* 3. 이용 가능 여부 스위치 */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setOnlyAvailable(!onlyAvailable)}
+          className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none ${
+            onlyAvailable ? 'bg-blue-600' : 'bg-gray-200'
+          }`}
+        >
+          <span
+            className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+              onlyAvailable ? 'translate-x-6' : 'translate-x-1'
+            }`}
+          />
+        </button>
+        <span className="text-xs font-bold text-gray-500">현재 이용 가능한 곳만 보기</span>
       </div>
     </div>
   );

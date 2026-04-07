@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Star, X, CheckCircle2, ThumbsUp, Loader2 } from 'lucide-react';
-import { ChargingStation } from '../../types';
+import { Star, X, CheckCircle2, Loader2 } from 'lucide-react';
+import type { ChargingStation } from '../../types';
 import { useStationStore } from '../../store/stationStore';
+import { useUserStore } from '../../store/userStore';
 import { useNotificationStore } from '../../store/notificationStore';
 import { useMileage } from '../../hooks/useMileage';
 import { stationService } from '../../services/stationService';
@@ -12,7 +13,8 @@ interface ReviewModalProps {
 }
 
 export const ReviewModal: React.FC<ReviewModalProps> = ({ station, onClose }) => {
-  const { addReview } = useStationStore();
+  const { fetchStations } = useStationStore();
+  const { fetchUser } = useUserStore(); // 추가: 유저 정보 갱신 액션
   const { addNotification } = useNotificationStore();
   const { triggerRewardAnimation } = useMileage();
   
@@ -31,21 +33,23 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, onClose }) =>
     setIsSubmitting(true);
 
     try {
-      // 1. 서버에 리뷰 제출
-      const response = await stationService.submitReview(station.id, {
+      // 1. 서버에 리뷰 제출 (필드명 station_id로 보정)
+      const response = await stationService.submitReview(station.station_id, {
         rating,
         content: content.trim()
-      });
+      } as any);
 
-      if (response.success && response.data && response.data.review) {
-        // [핵심] 서버가 생성한 '진짜 리뷰 객체'를 그대로 스토어에 전달
-        // 이 객체 안에는 서버의 user_name(최정환)과 실제 content가 들어있음
-        addReview(station.id, response.data.review);
+      if (response.success) {
+        // 2. [수리] 유저 정보 및 충전소 데이터 즉시 새로고침
+        await Promise.all([
+          fetchUser(),
+          fetchStations()
+        ]);
 
-        // 2. 보상 애니메이션 실행
-        triggerRewardAnimation(100, `리뷰 작성 보상: ${station.name}`);
+        // 3. 보상 애니메이션 실행
+        triggerRewardAnimation(100, `리뷰 작성 보상: ${station.station_name}`);
         
-        // 3. 시스템 알림
+        // 4. 시스템 알림
         addNotification({
           role: 'USER',
           type: 'SUCCESS',
@@ -61,7 +65,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, onClose }) =>
           setRating(5);
         }, 2500);
       } else {
-        console.error('서버 응답 형식이 올바르지 않습니다.', response);
+        alert('리뷰 등록 중 오류가 발생했습니다.');
       }
     } catch (error) {
       console.error('리뷰 제출 실패:', error);
@@ -79,7 +83,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, onClose }) =>
             <div className="flex justify-between items-start mb-6">
               <div>
                 <h3 className="text-xl font-black text-gray-900">현장 리뷰 남기기</h3>
-                <p className="text-gray-400 text-xs mt-1">{station.name}</p>
+                <p className="text-gray-400 text-xs mt-1">{station.station_name}</p>
               </div>
               <button 
                 onClick={onClose} 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, Coins, BatteryFull, Info, Loader2, Car } from 'lucide-react';
-import { ChargingStation } from '../../types';
+import type { ChargingStation } from '../../types';
 import { useNotificationStore } from '../../store/notificationStore';
 
 interface ChargingFlowModalProps {
@@ -32,7 +32,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
   })();
 
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setInterval>;
     if (step === 'CHARGING' && station) {
       isCompletedRef.current = false;
       timer = setInterval(() => {
@@ -71,15 +71,15 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
       role: 'ADMIN',
       type: 'INFO',
       title: '충전 완료 감지 📡',
-      message: `${station?.name}의 충전이 끝났습니다. 차량 이탈 감지 모드로 전환합니다.`
+      message: `${station?.station_name}의 충전이 끝났습니다. 차량 이탈 감지 모드로 전환합니다.`
     });
     
     setStep('WAITING_EXIT');
   };
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    let hwTimeout: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
+    let hwTimeout: ReturnType<typeof setTimeout>;
     if (step === 'WAITING_EXIT') {
       interval = setInterval(() => setExitTimer(prev => (prev > 0 ? prev - 1 : 0)), 1000);
       hwTimeout = setTimeout(() => {
@@ -95,7 +95,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
           role: 'ADMIN',
           type: 'SUCCESS',
           title: '공간 비워짐 확인 🚗💨',
-          message: `${station?.name}의 차량 이탈을 확인했습니다. 유령 데이터가 갱신됩니다.`
+          message: `${station?.station_name}의 차량 이탈을 확인했습니다. 유령 데이터가 갱신됩니다.`
         });
         setStep('SUCCESS');
       }, 5000);
@@ -152,8 +152,8 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
               <p className="text-[10px] leading-relaxed font-bold text-gray-500">{reward.desc}</p>
             </div>
             <button onClick={() => {
-              addNotification({ role: 'INFO', type: 'INFO', title: '충전 시작 ⚡', message: `${station.name}에서 충전을 시작합니다.` });
-              addNotification({ role: 'ADMIN', type: 'INFO', title: '충전 개시 모니터링 📡', message: `${station.name} 구역에서 충전 세션이 시작되었습니다.` });
+              addNotification({ role: 'USER', type: 'INFO', title: '충전 시작 ⚡', message: `${station.station_name}에서 충전을 시작합니다.` });
+              addNotification({ role: 'ADMIN', type: 'INFO', title: '충전 개시 모니터링 📡', message: `${station.station_name} 구역에서 충전 세션이 시작되었습니다.` });
               setStep('CHARGING');
             }} className="w-full bg-blue-600 text-white py-5 rounded-3xl text-lg font-black shadow-xl active:scale-95 transition-all">충전 시작하기</button>
           </div>

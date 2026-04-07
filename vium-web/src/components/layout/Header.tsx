@@ -55,10 +55,10 @@ export const Header: React.FC<HeaderProps> = ({ isAdmin, onToggleAdmin }) => {
           </div>
           
           <div className="hidden md:flex items-center gap-2 p-1 pr-3 hover:bg-gray-100 rounded-full transition-all cursor-pointer">
-            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold">
-              {user.name[0]}
+            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold overflow-hidden">
+              {user?.nickname?.[0] || <User size={16} />}
             </div>
-            <span className="text-sm font-medium">{user.name} 님</span>
+            <span className="text-sm font-medium">{user?.nickname || '로딩 중...'} {user ? '님' : ''}</span>
           </div>
         </div>
       </div>

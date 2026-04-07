@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Any
 from datetime import datetime
+from decimal import Decimal
 
 # --- Review Schemas ---
 class ReviewBase(BaseModel):
@@ -10,73 +11,89 @@ class ReviewBase(BaseModel):
 class ReviewCreate(ReviewBase):
     pass
 
+class ReviewUpdate(BaseModel):
+    status: str # 'VISIBLE' | 'HIDDEN' (관리자용 제어)
+
 class Review(ReviewBase):
-    id: str
+    id: int
     user_name: str
-    date: datetime
+    status: str
+    created_at: datetime
 
     class Config:
         from_attributes = True
 
-# --- Report Schemas ---
-class ReportBase(BaseModel):
-    issueType: str
-    content: str = Field(..., min_length=10)
-
-class ReportCreate(ReportBase):
-    stationId: str
-
-class ReportUpdate(BaseModel):
-    status: str # 'APPROVED' | 'REJECTED'
-
-class Report(ReportBase):
-    id: str
-    stationId: str
-    userId: str
+# --- Charger Schemas ---
+class ChargerBase(BaseModel):
+    charger_id: str
+    charger_type: str
+    connector_type: str
     status: str
-    timestamp: datetime
 
+class Charger(ChargerBase):
     class Config:
         from_attributes = True
 
 # --- Station Schemas ---
 class StationBase(BaseModel):
-    name: str
+    station_id: str
+    station_name: str
     address: str
-    lat: float
-    lng: float
-    type: str
-    status: str
+    latitude: Decimal
+    longitude: Decimal
     price: int
     isTimeSale: bool
-    priceHistory: List[int]
-    distance: str
-    availableSlots: int
-    totalSlots: int
-    connectorTypes: List[str]
+    priceHistory: List[int] = []
     lastSuccessTime: str
+    distance: Optional[str]
 
 class Station(StationBase):
-    id: str
+    chargers: List[Charger] = []
     reviews: List[Review] = []
-    reports: List[Report] = []
+
+    class Config:
+        from_attributes = True
+
+# --- Report Schemas ---
+class ReportCreate(BaseModel):
+    charger_id: str
+    keyword: str
+    content: str = Field(..., min_length=10)
+
+class ReportUpdate(BaseModel):
+    status: str # 'APPROVED' | 'REJECTED' (관리자용)
+
+class Report(BaseModel):
+    report_id: int
+    user_id: int
+    charger_id: str
+    keyword: str
+    content: str
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# --- Mileage Log Schemas ---
+class MileageLog(BaseModel):
+    log_id: int
+    amount: int
+    description: str
+    created_at: datetime
 
     class Config:
         from_attributes = True
 
 # --- User Schemas ---
-class UserActivity(BaseModel):
-    id: str
-    type: str
-    date: str
-    amount: str
-
 class UserProfile(BaseModel):
-    id: str
-    name: str
-    points: int
+    user_id: int
+    email: str
+    nickname: Optional[str]
+    mileage_balance: int
     level: str
-    recentActivity: List[UserActivity] = []
+    trust_score: int
+    mileage_logs: List[MileageLog] = []
 
     class Config:
         from_attributes = True
@@ -85,11 +102,10 @@ class UserProfile(BaseModel):
 class RewardResponse(BaseModel):
     success: bool
     points_added: int
-    total_points: int
+    total_balance: int
     message: str
-    review: Optional[Review] = None
 
 class ActionResponse(BaseModel):
     success: bool
     message: str
-    data: Optional[dict] = None
+    data: Optional[Any] = None

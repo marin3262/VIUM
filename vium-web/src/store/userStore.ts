@@ -1,35 +1,30 @@
 import { create } from 'zustand';
-import { UserProfile } from '../types';
-import { MOCK_USER } from '../mockData';
+import type { UserProfile, ChargingStation } from '../types';
 import { stationService } from '../services/stationService';
 
 interface UserState {
-  user: UserProfile;
-  points: number;
+  user: UserProfile | null;
   isLoading: boolean;
+  pendingReviewStation: ChargingStation | null; // 신규: 리뷰 대기 중인 충전소 정보
   
   // Actions
   fetchUser: () => Promise<void>;
-  setPoints: (points: number) => void;
-  addPoints: (amount: number, reason: string) => void; // 즉시 가산 및 로그 (관리자/단순 작업용)
-  addActivity: (amount: number, reason: string) => void; // 로그만 기록 (애니메이션 동반 작업용)
   updateUser: (user: Partial<UserProfile>) => void;
+  completeCharging: (stationId: string) => Promise<boolean>;
+  setPendingReview: (station: ChargingStation | null) => void; // 신규: 상태 설정 액션
 }
 
-export const useUserStore = create<UserState>((set) => ({
-  user: MOCK_USER,
-  points: MOCK_USER.points,
+export const useUserStore = create<UserState>((set, get) => ({
+  user: null,
   isLoading: false,
+  pendingReviewStation: null,
 
   fetchUser: async () => {
     set({ isLoading: true });
     try {
       const response = await stationService.getUserMe();
       if (response.success && response.data) {
-        set({ 
-          user: response.data,
-          points: response.data.points 
-        });
+        set({ user: response.data });
       }
     } catch (error) {
       console.error('Failed to fetch user:', error);
@@ -38,40 +33,26 @@ export const useUserStore = create<UserState>((set) => ({
     }
   },
 
-  setPoints: (points) => set({ points }),
+  updateUser: (partialUser) => set((state) => {
+    if (!state.user) return state;
+    return {
+      user: { ...state.user, ...partialUser }
+    };
+  }),
 
-  addPoints: (amount, reason) => set((state) => ({
-    points: state.points + amount,
-    user: {
-      ...state.user,
-      recentActivity: [
-        {
-          id: `act-${Date.now()}`,
-          type: reason,
-          date: new Date().toLocaleDateString(),
-          amount: `+${amount.toLocaleString()} P`
-        },
-        ...state.user.recentActivity
-      ]
-    }
-  })),
+  setPendingReview: (station) => set({ pendingReviewStation: station }),
 
-  addActivity: (amount, reason) => set((state) => ({
-    user: {
-      ...state.user,
-      recentActivity: [
-        {
-          id: `act-${Date.now()}`,
-          type: reason,
-          date: new Date().toLocaleDateString(),
-          amount: `+${amount.toLocaleString()} P`
-        },
-        ...state.user.recentActivity
-      ]
+  completeCharging: async (stationId: string) => {
+    try {
+      const response = await stationService.completeCharging(stationId);
+      if (response.success) {
+        await get().fetchUser();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Failed to complete charging:', error);
+      return false;
     }
-  })),
-  
-  updateUser: (partialUser) => set((state) => ({
-    user: { ...state.user, ...partialUser }
-  })),
+  }
 }));

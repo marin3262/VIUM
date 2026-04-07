@@ -1,17 +1,28 @@
-# General
+# General (공통 제외 항목)
 node_modules/
 .DS_Store
 dist/
 build/
 .env
 .venv/
-__pycache__/
+**/__pycache__/
+*.pyc
 
-# VIUM Database (Docker & SQLite)
+# VIUM Backend (백엔드 전용 제외 항목)
 vium-backend/.env
 vium-backend/vium.db
 vium-backend/docker/
+vium-backend/venv/
+vium-backend/app/**/__pycache__/
 *.db
 
-# Gemini Logs (Optional)
-logs/*.log
+# VIUM Web (프론트엔드 전용 제외 항목)
+vium-web/node_modules/
+vium-web/dist/
+
+# Gemini Logs & Screenshots (기타)
+logs/
+*.png
+*.jpg
+*.jpeg
+*.gif
