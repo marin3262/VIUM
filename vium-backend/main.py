@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import uvicorn
+import os
 
 from app.db.session import engine, Base
 from app.api.v1 import endpoints
@@ -14,22 +16,25 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS 설정: 프론트엔드(React/Vite) 포트 허용
-origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
-
+# CORS 설정: 모든 도메인 허용 (테스트 및 ngrok 연동용)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# 정적 파일 서빙 설정 (사진 업로드용)
+static_path = os.path.join(os.path.dirname(__file__), "static")
+if not os.path.exists(static_path):
+    os.makedirs(static_path)
+app.mount("/static", StaticFiles(directory=static_path), name="static")
+
 # API 라우터 등록
 app.include_router(endpoints.router, prefix="/api/v1")
+from app.api.v1 import hardware
+app.include_router(hardware.router, prefix="/api/v1/hardware", tags=["Hardware"])
 
 @app.get("/")
 async def root():

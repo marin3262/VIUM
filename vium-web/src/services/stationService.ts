@@ -39,8 +39,17 @@ export const stationService = {
     charger_id: string;
     keyword: string;
     content: string;
+    image?: File;
   }): Promise<ApiResponse<any>> => {
-    return await apiClient.post<any>('/reports', reportData);
+    const formData = new FormData();
+    formData.append('charger_id', reportData.charger_id);
+    formData.append('keyword', reportData.keyword);
+    formData.append('content', reportData.content);
+    if (reportData.image) {
+      formData.append('image', reportData.image);
+    }
+    
+    return await apiClient.postMultipart<any>('/reports', formData);
   },
 
   getReports: async (): Promise<ApiResponse<any[]>> => {

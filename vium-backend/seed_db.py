@@ -1,6 +1,5 @@
 from app.db.session import SessionLocal, engine, Base
 from app.models import models
-from app.db.redis_client import update_station_slots
 from sqlalchemy import text
 from decimal import Decimal
 from datetime import datetime, timedelta
@@ -15,46 +14,120 @@ def generate_price_history(base_price):
         history.append(price)
     return history
 
-def reset_database():
-    with engine.connect() as conn:
-        conn.execute(text("SET FOREIGN_KEY_CHECKS = 0;"))
-        Base.metadata.drop_all(bind=conn)
-        Base.metadata.create_all(bind=conn)
-        conn.execute(text("SET FOREIGN_KEY_CHECKS = 1;"))
-        conn.commit()
-
 db = SessionLocal()
 
 def seed():
-    reset_database()
-    
-    user = models.User(user_id=1, email="test@vium.com", password="hashed_password", nickname="최정환", mileage_balance=15700, level="에코 드라이버")
-    db.add(user)
+    # 1. 유저 데이터 복구 및 신뢰도 초기화
+    user = db.query(models.User).filter(models.User.user_id == 1).first()
+    if not user:
+        user = models.User(
+            user_id=1, 
+            email="test@vium.com", 
+            password="hashed_password", 
+            nickname="최정환", 
+            mileage_balance=15700, 
+            level="에코 드라이버",
+            trust_score=98
+        )
+        db.add(user)
+        db.flush()
+    else:
+        user.mileage_balance = 15700
+        user.trust_score = 98
 
-    # 1. 강남역 (일부 사용 가능)
-    s1 = models.Station(station_id="KEPCO_001", station_name="강남역 공용주차장 충전소", address="서울특별시 강남구 역삼동 821-1", latitude=Decimal("37.4979"), longitude=Decimal("127.0276"), price=324, isTimeSale=True, priceHistory=generate_price_history(324), lastSuccessTime="12분 전", distance="0.8km")
-    db.add(s1)
-    db.add(models.Charger(charger_id="CH_001_1", station_id="KEPCO_001", charger_type="급속", connector_type="DC Combo", status="Available"))
-    db.add(models.Charger(charger_id="CH_001_2", station_id="KEPCO_001", charger_type="급속", connector_type="Chademo", status="Charging"))
+    # 2. 충전소 및 충전기 데이터 (양주 및 서울 통합)
+    station_data = [
+        {
+            "id": "YANGJU_001", "name": "양주시청 공영주차장", "addr": "경기도 양주시 부흥로 1533",
+            "lat": "37.7853", "lng": "127.0457", "price": 290, "dist": "0.1km",
+            "chargers": [
+                {"id": "CH_YJ01_1", "type": "급속", "conn": "DC Combo", "status": "Available"},
+                {"id": "CH_YJ01_2", "type": "완속", "conn": "Slow", "status": "Available"}
+            ]
+        },
+        {
+            "id": "YANGJU_002", "name": "옥정신도시 중심상가 주차타워", "addr": "경기도 양주시 옥정로 226",
+            "lat": "37.8175", "lng": "127.0945", "price": 310, "dist": "4.2km",
+            "chargers": [
+                {"id": "CH_YJ02_1", "type": "급속", "conn": "DC Combo", "status": "Available"},
+                {"id": "CH_YJ02_2", "type": "급속", "conn": "DC Combo", "status": "Charging"}
+            ]
+        },
+        {
+            "id": "KEPCO_002", "name": "코엑스 지하주차장 B2", "addr": "서울특별시 강남구 삼성동 159",
+            "lat": "37.5113", "lng": "127.0598", "price": 345, "dist": "1.2km",
+            "chargers": [
+                {"id": "CH_002_1", "type": "초급속", "conn": "DC Combo", "status": "Charging"},
+                {"id": "CH_002_2", "type": "초급속", "conn": "DC Combo", "status": "Charging"}
+            ]
+        }
+    ]
 
-    # 2. 코엑스 (모두 충전 중 - 이전에는 3곳만 나왔던 이유)
-    s2 = models.Station(station_id="KEPCO_002", station_name="코엑스 지하주차장 B2", address="서울특별시 강남구 삼성동 159", latitude=Decimal("37.5113"), longitude=Decimal("127.0598"), price=345, isTimeSale=False, priceHistory=generate_price_history(345), lastSuccessTime="2시간 전", distance="1.2km")
-    db.add(s2)
-    db.add(models.Charger(charger_id="CH_002_1", station_id="KEPCO_002", charger_type="초급속", connector_type="DC Combo", status="Charging"))
-    db.add(models.Charger(charger_id="CH_002_2", station_id="KEPCO_002", charger_type="초급속", connector_type="DC Combo", status="Charging"))
+    for s_info in station_data:
+        station = db.query(models.Station).filter(models.Station.station_id == s_info["id"]).first()
+        if not station:
+            station = models.Station(
+                station_id=s_info["id"],
+                station_name=s_info["name"],
+                address=s_info["addr"],
+                latitude=Decimal(s_info["lat"]),
+                longitude=Decimal(s_info["lng"]),
+                price=s_info["price"],
+                isTimeSale=random.choice([True, False]),
+                priceHistory=generate_price_history(s_info["price"]),
+                distance=s_info["dist"]
+            )
+            db.add(station)
+        
+        for c_info in s_info["chargers"]:
+            charger = db.query(models.Charger).filter(models.Charger.charger_id == c_info["id"]).first()
+            if not charger:
+                charger = models.Charger(
+                    charger_id=c_info["id"],
+                    station_id=s_info["id"],
+                    charger_type=c_info["type"],
+                    connector_type=c_info["conn"],
+                    status=c_info["status"]
+                )
+                db.add(charger)
 
-    # 3. 삼성역 (완속 포함)
-    s3 = models.Station(station_id="KEPCO_003", station_name="삼성역 현대백화점 충전소", address="서울특별시 강남구 테헤란로 517", latitude=Decimal("37.5085"), longitude=Decimal("127.0595"), price=250, isTimeSale=True, priceHistory=generate_price_history(250), lastSuccessTime="15분 전", distance="1.5km")
-    db.add(s3)
-    db.add(models.Charger(charger_id="CH_003_1", station_id="KEPCO_003", charger_type="완속", connector_type="Slow", status="Available"))
+    # 3. 마일리지 활동 내역 복구 (MileageLog)
+    if db.query(models.MileageLog).count() == 0:
+        logs = [
+            {"amount": 500, "desc": "양주시청 충전소 고장 제보 승인", "days": 1},
+            {"amount": 100, "desc": "옥정중심상가 리뷰 작성 보상", "days": 2},
+            {"amount": 200, "desc": "에코 드라이빙 챌린지 달성", "days": 3},
+            {"amount": 50, "desc": "충전 매너 서약 참여", "days": 5}
+        ]
+        for l in logs:
+            db.add(models.MileageLog(
+                user_id=1,
+                amount=l["amount"],
+                description=l["desc"],
+                created_at=datetime.utcnow() - timedelta(days=l["days"])
+            ))
 
-    # 4. 역삼역 (고장)
-    s4 = models.Station(station_id="KEPCO_004", station_name="역삼역 테헤란로 충전소", address="서울특별시 강남구 역삼동 737", latitude=Decimal("37.5006"), longitude=Decimal("127.0364"), price=310, isTimeSale=False, priceHistory=generate_price_history(310), lastSuccessTime="3일 전", distance="2.1km")
-    db.add(s4)
-    db.add(models.Charger(charger_id="CH_004_1", station_id="KEPCO_004", charger_type="급속", connector_type="DC Combo", status="Faulty"))
+    # 4. 리뷰 데이터 복구 (Review)
+    if db.query(models.Review).count() == 0:
+        reviews = [
+            {"sid": "YANGJU_001", "content": "양주시청 주차 공간이 넉넉해서 초보자도 충전하기 편해요! 관리도 잘 되어있네요.", "rating": 5},
+            {"sid": "YANGJU_002", "content": "중심상가라 식사하는 동안 충전하기 딱 좋습니다. 다만 주말에는 대기가 좀 있네요.", "rating": 4},
+            {"sid": "KEPCO_002", "content": "코엑스 지하주차장이 너무 넓어서 찾기 힘들었지만 시설은 최고입니다.", "rating": 4}
+        ]
+        for r in reviews:
+            db.add(models.Review(
+                station_id=r["sid"],
+                user_id=1,
+                user_name="최정환",
+                rating=r["rating"],
+                content=r["content"],
+                status="VISIBLE",
+                created_at=datetime.utcnow() - timedelta(days=random.randint(1, 10))
+            ))
 
     db.commit()
-    print("Database seeded with FULL UI DATA!")
+    print("Database data recovery & seeding completed safely!")
 
 if __name__ == "__main__":
+    Base.metadata.create_all(bind=engine)
     seed()

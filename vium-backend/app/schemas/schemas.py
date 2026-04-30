@@ -41,11 +41,11 @@ class StationBase(BaseModel):
     address: str
     latitude: Decimal
     longitude: Decimal
-    price: int
-    isTimeSale: bool
-    priceHistory: List[int] = []
-    lastSuccessTime: str
-    distance: Optional[str]
+    price: int = 300
+    isTimeSale: bool = False
+    priceHistory: List[int] = Field(default_factory=lambda: [300]*24)
+    lastSuccessTime: str = "정보 없음"
+    distance: Optional[str] = "-"
 
 class Station(StationBase):
     chargers: List[Charger] = []
@@ -69,6 +69,7 @@ class Report(BaseModel):
     charger_id: str
     keyword: str
     content: str
+    image_url: Optional[str] = None
     status: str
     created_at: datetime
 
@@ -109,3 +110,17 @@ class ActionResponse(BaseModel):
     success: bool
     message: str
     data: Optional[Any] = None
+
+# --- Hardware Schemas (Added for IoT Integration) ---
+class ConnectorSignal(BaseModel):
+    """아두이노(ESP32)로부터 수신하는 충전 커넥터 상태 데이터"""
+    charger_id: str
+    status: str # 'CONNECTED' | 'DISCONNECTED'
+    timestamp: Optional[datetime] = Field(default_factory=datetime.utcnow)
+
+class CameraSignal(BaseModel):
+    """라즈베리파이(OpenCV)로부터 수신하는 차량 점유 감지 데이터"""
+    parking_space_id: str # DB의 charger_id와 1:1 매핑됨
+    vehicle_present: bool
+    confidence_score: float = Field(..., ge=0.0, le=1.0)
+    timestamp: Optional[datetime] = Field(default_factory=datetime.utcnow)

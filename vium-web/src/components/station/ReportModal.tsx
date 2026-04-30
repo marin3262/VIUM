@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { X, Camera, Loader2, Check, CheckCircle2, Zap } from 'lucide-react';
 import type { ChargingStation } from '../../types';
 import { stationService } from '../../services/stationService';
@@ -11,16 +11,37 @@ interface ReportModalProps {
 
 export const ReportModal: React.FC<ReportModalProps> = ({ station, onClose }) => {
   const { addNotification } = useNotificationStore();
-  const [selectedChargerId, setSelectedChargerId] = useState<string | null>(null); // 신규: 충전기 선택 상태
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const [selectedChargerId, setSelectedChargerId] = useState<string | null>(null);
   const [issueType, setIssueType] = useState('ConnectorBroken');
   const [content, setContent] = useState('');
-  const [isPhotoAttached, setIsPhotoAttached] = useState(false); 
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
   if (!station) return null;
 
   const isValid = selectedChargerId && content.trim().length >= 10;
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreviewUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const removePhoto = () => {
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const handleSubmit = async () => {
     if (!isValid || isSubmitting) return;
@@ -30,7 +51,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({ station, onClose }) =>
       const response = await stationService.submitReport({
         charger_id: selectedChargerId!,
         keyword: issueType,
-        content: content.trim()
+        content: content.trim(),
+        image: selectedFile || undefined
       });
 
       if (response.success) {
@@ -47,6 +69,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ station, onClose }) =>
           onClose();
           setContent('');
           setSelectedChargerId(null);
+          removePhoto();
         }, 2500);
       }
     } catch (error) {
@@ -78,24 +101,32 @@ export const ReportModal: React.FC<ReportModalProps> = ({ station, onClose }) =>
             </div>
 
             <div className="space-y-6">
-              {/* 1. 충전기 선택 (사용자 아이디어 반영) */}
+              {/* 1. 충전기 선택 */}
               <div className="space-y-3">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">몇 번 충전기인가요?</p>
                 <div className="grid grid-cols-3 gap-2">
-                  {station.chargers.map((charger) => (
-                    <button
-                      key={charger.charger_id}
-                      onClick={() => setSelectedChargerId(charger.charger_id)}
-                      className={`py-3 rounded-2xl text-[11px] font-black border transition-all flex flex-col items-center gap-1 ${
-                        selectedChargerId === charger.charger_id 
-                          ? 'bg-blue-600 border-blue-600 text-white shadow-lg' 
-                          : 'bg-gray-50 border-gray-100 text-gray-500 hover:border-blue-200'
-                      }`}
-                    >
-                      <Zap size={14} className={selectedChargerId === charger.charger_id ? 'text-blue-200' : 'text-blue-500'} />
-                      {charger.charger_id.split('_').pop()}호기
-                    </button>
-                  ))}
+                  {station.chargers?.map((charger) => {
+                    if (!charger?.charger_id) return null;
+                    
+                    const displayId = charger.charger_id.includes('_') 
+                      ? charger.charger_id.split('_').pop() 
+                      : charger.charger_id;
+
+                    return (
+                      <button
+                        key={charger.charger_id}
+                        onClick={() => setSelectedChargerId(charger.charger_id)}
+                        className={`py-3 rounded-2xl text-[11px] font-black border transition-all flex flex-col items-center gap-1 ${
+                          selectedChargerId === charger.charger_id 
+                            ? 'bg-blue-600 border-blue-600 text-white shadow-lg' 
+                            : 'bg-gray-50 border-gray-100 text-gray-500 hover:border-blue-200'
+                        }`}
+                      >
+                        <Zap size={14} className={selectedChargerId === charger.charger_id ? 'text-blue-200' : 'text-blue-500'} />
+                        {displayId}호기
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -119,9 +150,22 @@ export const ReportModal: React.FC<ReportModalProps> = ({ station, onClose }) =>
                 </div>
               </div>
 
-              {/* 3. 상세 내용 */}
+              {/* 3. 상세 내용 및 사진 미리보기 */}
               <div className="space-y-2">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">상세 내용 (10자 이상)</p>
+                
+                {previewUrl && (
+                  <div className="relative w-full h-40 rounded-3xl overflow-hidden border border-gray-100 mb-2 group">
+                    <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                    <button 
+                      onClick={removePhoto}
+                      className="absolute top-3 right-3 bg-black/50 text-white p-2 rounded-full hover:bg-black/70 transition-colors backdrop-blur-sm"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
+
                 <textarea 
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
@@ -132,11 +176,18 @@ export const ReportModal: React.FC<ReportModalProps> = ({ station, onClose }) =>
               </div>
 
               <div className="flex gap-3">
+                <input 
+                  type="file" 
+                  ref={fileInputRef}
+                  className="hidden" 
+                  accept="image/*" 
+                  onChange={handleFileChange}
+                />
                 <button 
-                  onClick={() => setIsPhotoAttached(!isPhotoAttached)} 
-                  className={`flex-1 py-4 rounded-3xl text-sm font-black flex items-center justify-center gap-2 transition-all ${isPhotoAttached ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                  onClick={() => fileInputRef.current?.click()} 
+                  className={`flex-1 py-4 rounded-3xl text-sm font-black flex items-center justify-center gap-2 transition-all ${selectedFile ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
                 >
-                  {isPhotoAttached ? <><Check size={18} /> 완료</> : <><Camera size={18} /> 사진</>}
+                  {selectedFile ? <><Check size={18} /> 완료</> : <><Camera size={18} /> 사진</>}
                 </button>
                 <button 
                   disabled={!isValid || isSubmitting}

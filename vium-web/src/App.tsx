@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { MapPin, Coins, Search, ShieldCheck, MessageSquare, ArrowRight, X } from 'lucide-react';
+import { MapPin, Coins, Search, ShieldCheck, MessageSquare, ArrowRight, X, Maximize2, Minimize2, Plus } from 'lucide-react';
 
 // --- Types ---
 import type { ChargingStation } from './types';
@@ -16,6 +16,7 @@ import { AdminDashboard } from './components/admin/AdminDashboard';
 import { RewardToast } from './components/reward/RewardToast';
 import { NotificationOverlay } from './components/reward/NotificationOverlay';
 import { PillFilter } from './components/station/PillFilter';
+import { StationMap } from './components/station/StationMap';
 
 // --- Stores & Hooks ---
 import { useStationStore } from './store/stationStore';
@@ -25,7 +26,7 @@ import { useNotificationStore } from './store/notificationStore';
 
 function App() {
   const { user, fetchUser, pendingReviewStation, setPendingReview } = useUserStore();
-  const { stations, getFilteredStations, fetchStations, isLoading: isStationsLoading } = useStationStore();
+  const { stations = [], getFilteredStations, fetchStations, isLoading: isStationsLoading } = useStationStore();
   const { rewardToast, isCounting, triggerRewardAnimation } = useMileage();
   const { addNotification } = useNotificationStore();
 
@@ -34,69 +35,90 @@ function App() {
   const [reportTargetId, setReportTargetId] = useState<string | null>(null);
   const [chargingTargetId, setChargingTargetId] = useState<string | null>(null);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [isMapExpanded, setIsMapExpanded] = useState(false);
+  
+  const [visibleCount, setVisibleCount] = useState(6);
 
-  // --- 반응형 데이터 추출 (ID 기반) ---
-  const selectedStation = useMemo(() => stations.find(s => s.station_id === selectedStationId) || null, [stations, selectedStationId]);
-  const reportTarget = useMemo(() => stations.find(s => s.station_id === reportTargetId) || null, [stations, reportTargetId]);
-  const chargingTarget = useMemo(() => stations.find(s => s.station_id === chargingTargetId) || null, [stations, chargingTargetId]);
+  // --- 반응형 데이터 추출 ---
+  const selectedStation = useMemo(() => 
+    selectedStationId ? (stations.find(s => s.station_id === selectedStationId) || null) : null, 
+  [stations, selectedStationId]);
 
-  // --- 서버 데이터 초기화 ---
+  const reportTarget = useMemo(() => 
+    reportTargetId ? (stations.find(s => s.station_id === reportTargetId) || null) : null, 
+  [stations, reportTargetId]);
+
+  const chargingTarget = useMemo(() => 
+    chargingTargetId ? (stations.find(s => s.station_id === chargingTargetId) || null) : null, 
+  [stations, chargingTargetId]);
+
+  // --- 서버 데이터 Polling ---
   useEffect(() => {
     fetchUser();
     fetchStations();
+    const interval = setInterval(() => {
+      fetchStations();
+    }, 3000);
+    return () => clearInterval(interval);
   }, [fetchUser, fetchStations]);
 
-  // 전역 윈도우 객체에 모달 오픈 함수 등록
-  (window as any).openReportModal = (s: ChargingStation) => setReportTargetId(s.station_id);
+  // 전역 브릿지 함수 (ID 기반으로 변경하여 안정성 확보)
+  useEffect(() => {
+    (window as any).openStationDetail = (stationId: string) => {
+      if (stationId) setSelectedStationId(stationId);
+    };
+    (window as any).openReportModal = (stationId: string) => {
+      if (stationId) {
+        setSelectedStationId(null);
+        setReportTargetId(stationId);
+      }
+    };
+    return () => {
+      delete (window as any).openStationDetail;
+      delete (window as any).openReportModal;
+    };
+  }, []);
 
   const handleStartChargingFlow = () => {
-    const targetId = selectedStationId;
-    setSelectedStationId(null);
-    setChargingTargetId(targetId);
+    if (selectedStationId) {
+      const targetId = selectedStationId;
+      setSelectedStationId(null);
+      setChargingTargetId(targetId);
+    }
   };
 
   const handleChargingComplete = async (amount: number) => {
     const finishedStationId = chargingTargetId;
     if (!finishedStationId) return;
-
     setChargingTargetId(null);
-    
     const { completeCharging } = useUserStore.getState();
     const success = await completeCharging(finishedStationId);
-
     if (success) {
-      triggerRewardAnimation(amount, "충전 및 에코 서약 보상");
+      triggerRewardAnimation(amount, "충전 완료 보상");
       fetchStations();
-      
-      // [사용자 아이디어 반영] 즉시 리뷰 대신 알림 제공 및 대기 상태 전환
-      const targetStation = stations.find(s => s.station_id === finishedStationId);
-      if (targetStation) {
-        setPendingReview(targetStation);
-        addNotification({
-          role: 'USER',
-          type: 'SUCCESS',
-          title: '충전 보상 적립 완료! ⚡',
-          message: '리뷰를 작성하시면 100P 보너스를 더 드려요!'
-        });
-      }
-    } else {
-      alert('보상 지급 중 오류가 발생했습니다.');
     }
   };
 
-  const filteredStations = getFilteredStations();
+  const filteredStations = getFilteredStations() || [];
+  const pagedStations = useMemo(() => filteredStations.slice(0, visibleCount), [filteredStations, visibleCount]);
+  const hasMore = filteredStations.length > visibleCount;
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 text-gray-900 font-sans">
       <RewardToast show={rewardToast.show} amount={rewardToast.amount} />
       <NotificationOverlay isAdminMode={isAdminMode} />
       
-      <StationModal station={selectedStation} onClose={() => setSelectedStationId(null)} onStartCharging={handleStartChargingFlow} />
-      <ReportModal station={reportTarget} onClose={() => setReportTargetId(null)} />
-      <ChargingFlowModal station={chargingTarget} onClose={() => setChargingTargetId(null)} onComplete={handleChargingComplete} />
+      {selectedStation && (
+        <StationModal station={selectedStation} onClose={() => setSelectedStationId(null)} onStartCharging={handleStartChargingFlow} />
+      )}
+      {reportTarget && (
+        <ReportModal station={reportTarget} onClose={() => setReportTargetId(null)} />
+      )}
+      {chargingTarget && (
+        <ChargingFlowModal station={chargingTarget} onClose={() => setChargingTargetId(null)} onComplete={handleChargingComplete} />
+      )}
       
-      {/* [수리] 리뷰 모달: 사용자가 배너의 버튼을 눌렀을 때만(isReviewModalOpen) 노출됩니다. */}
-      {isReviewModalOpen && (
+      {isReviewModalOpen && pendingReviewStation && (
         <ReviewModal 
           station={pendingReviewStation} 
           onClose={() => {
@@ -112,107 +134,116 @@ function App() {
         {isAdminMode ? (
           <AdminDashboard />
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-1 space-y-6">
-              {/* 유저 프로필 카드 */}
-              <div className={`bg-blue-600 rounded-3xl p-8 text-white shadow-xl shadow-blue-200 relative overflow-hidden transition-all duration-300 ${isCounting ? 'scale-105 ring-4 ring-blue-300' : ''}`}>
-                <div className="relative z-10">
-                  <div className="flex justify-between items-start mb-4">
-                    <p className="text-blue-100 text-sm font-medium italic">{user?.level || '로딩 중...'}</p>
-                    <Coins size={24} className="opacity-80" />
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-4xl font-black leading-none">{(user?.mileage_balance || 0).toLocaleString()}</span>
-                    <span className="text-xl font-medium opacity-80">P</span>
-                  </div>
-                  
-                  <div className="mt-6 flex items-center justify-between bg-black/10 rounded-2xl p-3 backdrop-blur-sm border border-white/10">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck size={16} className={user?.trust_score && user.trust_score >= 90 ? 'text-green-400' : 'text-orange-400'} />
-                      <span className="text-xs font-bold text-blue-50">내 커뮤니티 신뢰도</span>
+          <div className="flex flex-col gap-8">
+            <div className={`grid grid-cols-1 ${isMapExpanded ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-8 transition-all duration-500`}>
+              
+              <div className="lg:col-span-1 space-y-6">
+                <div className={`bg-blue-600 rounded-3xl p-8 text-white shadow-xl shadow-blue-200 relative overflow-hidden transition-all duration-300 ${isCounting ? 'scale-105 ring-4 ring-blue-300' : ''}`}>
+                  <div className="relative z-10">
+                    <div className="flex justify-between items-start mb-4">
+                      <p className="text-blue-100 text-sm font-medium italic">{user?.level || '에코 드라이버'}</p>
+                      <Coins size={24} className="opacity-80" />
                     </div>
-                    <span className="text-sm font-black text-white">{user?.trust_score || 100}점</span>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-4xl font-black leading-none">{(user?.mileage_balance || 0).toLocaleString()}</span>
+                      <span className="text-xl font-medium opacity-80">P</span>
+                    </div>
+                    <div className="mt-6 flex items-center justify-between bg-black/10 rounded-2xl p-3 backdrop-blur-sm border border-white/10">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck size={16} className="text-green-400" />
+                        <span className="text-xs font-bold text-blue-50">커뮤니티 신뢰도</span>
+                      </div>
+                      <span className="text-sm font-black text-white">{user?.trust_score || 100}점</span>
+                    </div>
                   </div>
-                  
-                  <button className="mt-4 w-full bg-white text-blue-600 py-3 rounded-2xl text-sm font-bold shadow-lg active:scale-95 transition-transform">마일리지 사용하기</button>
+                  <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
                 </div>
-                <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
+
+                <div className="hidden lg:block bg-white rounded-3xl p-6 border border-gray-100 shadow-sm h-[320px] overflow-y-auto no-scrollbar">
+                  <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm"><Search size={16} className="text-blue-500" />최근 활동</h3>
+                  <div className="space-y-4">
+                    {user?.mileage_logs?.map((log) => (
+                      <div key={log.log_id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-2xl transition-colors">
+                        <div>
+                          <p className="text-xs font-bold text-gray-700 leading-tight">{log.description}</p>
+                          <p className="text-[10px] text-gray-400 mt-1">{new Date(log.created_at).toLocaleDateString()}</p>
+                        </div>
+                        <span className={`text-xs font-black ${log.amount > 0 ? 'text-blue-600' : 'text-red-500'}`}>
+                          {log.amount > 0 ? '+' : ''}{log.amount.toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
 
-              {/* [신규] 비동기 리뷰 작성 유도 배너 (사용자 아이디어 반영) */}
-              {pendingReviewStation && (
-                <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-3xl p-6 text-white shadow-xl shadow-purple-100 animate-in slide-in-from-left duration-500 relative overflow-hidden group">
-                  <div className="relative z-10">
-                    <div className="flex items-center gap-2 mb-2 text-purple-100">
-                      <MessageSquare size={16} />
-                      <span className="text-[10px] font-black uppercase tracking-widest">Pending Reward</span>
-                    </div>
-                    <h4 className="font-bold text-sm leading-tight mb-4">
-                      방금 이용하신 <br/>
-                      <span className="text-lg font-black text-yellow-300">{pendingReviewStation.station_name}</span><br/>
-                      리뷰를 남기고 100P 받아가세요!
-                    </h4>
+              <div className={`${isMapExpanded ? 'lg:col-span-3' : 'lg:col-span-2'} space-y-6 transition-all duration-500`}>
+                <div className={`bg-white rounded-3xl border border-gray-100 shadow-lg overflow-hidden relative group z-0 transition-all duration-500 ${isMapExpanded ? 'h-[600px]' : 'h-64 md:h-80'}`}>
+                  <div className="absolute inset-0 z-0">
+                    <StationMap 
+                      stations={filteredStations} 
+                      onMarkerClick={(s) => setSelectedStationId(s.station_id)} 
+                      isLoading={isStationsLoading} 
+                    />
+                  </div>
+                  
+                  <div className="absolute top-4 left-4 z-10">
                     <button 
-                      onClick={() => setIsReviewModalOpen(true)}
-                      className="flex items-center gap-2 bg-white text-purple-600 px-4 py-2 rounded-xl text-xs font-black group-hover:gap-3 transition-all"
+                      onClick={() => setIsMapExpanded(!isMapExpanded)}
+                      className="bg-white/95 backdrop-blur shadow-2xl border border-gray-200 p-3 rounded-2xl text-gray-700 hover:bg-gray-50 transition-all active:scale-95 flex items-center gap-2 group/btn"
                     >
-                      지금 바로 작성하기 <ArrowRight size={14} />
+                      {isMapExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                      <span className="text-[10px] font-black uppercase tracking-wider hidden group-hover/btn:block">{isMapExpanded ? '기본 크기' : '지도 크게보기'}</span>
                     </button>
                   </div>
-                  <button 
-                    onClick={() => setPendingReview(null)}
-                    className="absolute top-4 right-4 p-1 bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
-                  >
-                    <X size={14} />
-                  </button>
-                  <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
-                </div>
-              )}
-              
-              <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
-                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Search size={18} className="text-blue-500" />최근 활동 내역</h3>
-                <div className="space-y-4">
-                  {user?.mileage_logs?.map((log) => (
-                    <div key={log.log_id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-2xl transition-colors">
-                      <div>
-                        <p className="text-sm font-bold text-gray-700">{log.description}</p>
-                        <p className="text-xs text-gray-400">{new Date(log.created_at).toLocaleDateString()}</p>
+
+                  <div className="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur p-4 rounded-2xl shadow-lg flex items-center justify-between z-10 pointer-events-none border border-white/50">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-red-100 p-2 rounded-xl text-red-600">
+                        <MapPin size={18} />
                       </div>
-                      <span className={`text-sm font-bold ${log.amount > 0 ? 'text-blue-600' : 'text-red-500'}`}>
-                        {log.amount > 0 ? '+' : ''}{log.amount.toLocaleString()} P
-                      </span>
+                      <div>
+                        <span className="text-xs font-black text-gray-400 uppercase tracking-tighter">Current Monitoring Area</span>
+                        <p className="text-sm font-black text-gray-800">양주시 행정구역 전역</p>
+                      </div>
                     </div>
-                  ))}
-                  {(!user?.mileage_logs || user.mileage_logs.length === 0) && (
-                    <p className="text-center py-4 text-gray-400 text-xs italic">활동 내역이 없습니다.</p>
-                  )}
+                  </div>
                 </div>
-              </div>
-            </div>
-            
-            <div className="lg:col-span-2 space-y-6">
-              <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden h-64 md:h-80 relative group">
-                <div className="absolute inset-0 bg-blue-50 flex items-center justify-center text-blue-400 font-medium italic tracking-wide uppercase">
-                  {isStationsLoading ? 'LOADING STATIONS...' : 'MAP INTERFACE READY'}
-                </div>
-                <div className="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur p-4 rounded-2xl shadow-lg flex items-center justify-between">
-                  <div className="flex items-center gap-3"><MapPin className="text-red-500" /><span className="text-sm font-bold">강남구 역삼동 주변</span></div>
-                </div>
-              </div>
-              
-              <div className="space-y-6">
-                <div className="px-1">
-                  <h3 className="text-xl font-bold text-gray-800 tracking-tight mb-4">맞춤형 충전소 탐색</h3>
-                  <PillFilter />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {filteredStations.map((station) => (
-                    <StationCard key={station.station_id} station={station} onClick={(s) => setSelectedStationId(s.station_id)} />
-                  ))}
-                  {!isStationsLoading && filteredStations.length === 0 && (
-                    <div className="col-span-full py-20 text-center space-y-3 text-gray-400 font-medium">
-                      <Search size={48} className="mx-auto text-gray-300 mb-3" />
-                      조건에 맞는 충전소가 없습니다.
+
+                <div className="space-y-6">
+                  <div className="flex flex-col items-start gap-6 px-8 py-8 bg-white rounded-[32px] border border-gray-100 shadow-sm">
+                    <div className="text-left">
+                      <h3 className="text-2xl font-black text-gray-900 tracking-tight">충전소 탐색</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></span>
+                        <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Yangju Real-time Network ({filteredStations.length})</p>
+                      </div>
+                    </div>
+                    <div className="w-full">
+                      <PillFilter />
+                    </div>
+                  </div>
+
+                  <div className={`grid grid-cols-1 ${isMapExpanded ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4 transition-all duration-500`}>
+                    {pagedStations.map((station) => (
+                      <StationCard key={station.station_id} station={station} onClick={(s) => setSelectedStationId(s.station_id)} />
+                    ))}
+                    {!isStationsLoading && filteredStations.length === 0 && (
+                      <div className="col-span-full py-20 text-center space-y-3 text-gray-400 font-medium bg-white rounded-[40px] border-2 border-dashed border-gray-100">
+                        <Search size={48} className="mx-auto text-gray-200 mb-3" />
+                        조건에 맞는 충전소가 없습니다.
+                      </div>
+                    )}
+                  </div>
+
+                  {hasMore && (
+                    <div className="flex justify-center pt-4">
+                      <button 
+                        onClick={() => setVisibleCount(prev => prev + 12)}
+                        className="flex items-center gap-2 bg-white border-2 border-gray-100 px-8 py-4 rounded-3xl text-sm font-black text-gray-600 hover:bg-gray-50 hover:border-blue-200 hover:text-blue-600 transition-all shadow-sm active:scale-95"
+                      >
+                        <Plus size={18} /> 충전소 더보기 ({filteredStations.length - visibleCount})
+                      </button>
                     </div>
                   )}
                 </div>

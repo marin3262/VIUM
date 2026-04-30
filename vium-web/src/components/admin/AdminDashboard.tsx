@@ -2,13 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { 
   BarChart3, AlertCircle, CheckCircle2, Clock, 
   MapPin, ShieldCheck, TrendingUp, Search, XCircle,
-  Activity, Zap, Info, Check, X, Wrench, MessageSquare, EyeOff, ShieldAlert, RotateCcw
+  Activity, Zap, Info, Check, X, Wrench, MessageSquare, EyeOff, ShieldAlert, RotateCcw,
+  Image as ImageIcon
 } from 'lucide-react';
 import { useStationStore } from '../../store/stationStore';
 import { useUserStore } from '../../store/userStore';
 import { stationService } from '../../services/stationService';
 import { useNotificationStore } from '../../store/notificationStore';
 import { Review } from '../../types';
+
+const SERVER_ROOT = 'http://localhost:8000'; // 이미지 호스팅 서버 주소
 
 export const AdminDashboard: React.FC = () => {
   const { stations, fetchStations } = useStationStore();
@@ -20,6 +23,7 @@ export const AdminDashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [processingId, setProcessingId] = useState<number | string | null>(null);
   const [activeTab, setActiveTab] = useState<'REPORTS' | 'MAINTENANCE' | 'REVIEWS'>('REPORTS');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const loadAdminData = async () => {
     setIsLoading(true);
@@ -87,7 +91,6 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
-  // [고도화] 리뷰 상태 토글 핸들러 (숨김 <-> 공개)
   const handleToggleReviewStatus = async (reviewId: number, currentStatus: string) => {
     const nextStatus = currentStatus === 'VISIBLE' ? 'HIDDEN' : 'VISIBLE';
     const actionText = nextStatus === 'HIDDEN' ? '숨김 처리하고 패널티를 부여' : '다시 노출하고 점수를 복구';
@@ -131,6 +134,18 @@ export const AdminDashboard: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700 pb-20">
+      {/* 사진 크게 보기 오버레이 */}
+      {selectedImage && (
+        <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4 animate-in zoom-in duration-300" onClick={() => setSelectedImage(null)}>
+          <div className="relative max-w-4xl w-full max-h-[90vh] flex items-center justify-center">
+            <img src={`${SERVER_ROOT}${selectedImage}`} alt="Full Report Proof" className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl" />
+            <button className="absolute -top-12 right-0 text-white flex items-center gap-2 font-black text-sm hover:text-red-400 transition-colors">
+              <X size={24} /> 닫기
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 상단 통계 그리드 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
@@ -175,6 +190,21 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                     <p className="text-xs text-blue-600 font-bold mb-2">{report.charger_id}번 충전기 - {report.keyword}</p>
                     <p className="text-sm text-gray-600 mb-4">{report.content}</p>
+                    
+                    {report.image_url && (
+                      <div className="mb-4 group relative w-32 h-32">
+                        <img 
+                          src={`${SERVER_ROOT}${report.image_url}`} 
+                          alt="Report Proof" 
+                          className="w-32 h-32 object-cover rounded-2xl border border-gray-100 cursor-pointer shadow-sm group-hover:scale-105 transition-transform"
+                          onClick={() => setSelectedImage(report.image_url)}
+                        />
+                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 rounded-2xl flex items-center justify-center pointer-events-none transition-opacity">
+                          <ImageIcon className="text-white" size={20} />
+                        </div>
+                      </div>
+                    )}
+
                     {report.status === 'PENDING' && (
                       <div className="flex gap-2">
                         <button onClick={() => handleProcessReport(report.report_id, 'APPROVED')} className="px-6 py-2 bg-green-600 text-white rounded-xl text-xs font-black shadow-lg shadow-green-100">승인 (+5점 회복)</button>

@@ -175,7 +175,16 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
 
           {/* Buttons */}
           <div className="flex gap-3 pt-2">
-            <button onClick={() => (window as any).openReportModal(station)} className="flex-1 bg-white border-2 border-red-100 text-red-500 py-4 rounded-2xl text-sm font-black flex items-center justify-center gap-2 hover:bg-red-50 transition-all"><ShieldAlert size={18} /> 고장 제보</button>
+            <button 
+              onClick={() => {
+                if ((window as any).openReportModal) {
+                  (window as any).openReportModal(station.station_id);
+                }
+              }} 
+              className="flex-1 bg-white border-2 border-red-100 text-red-500 py-4 rounded-2xl text-sm font-black flex items-center justify-center gap-2 hover:bg-red-50 transition-all"
+            >
+              <ShieldAlert size={18} /> 고장 제보
+            </button>
             <button onClick={onStartCharging} disabled={availableSlots === 0} className={`flex-[2] py-4 rounded-2xl text-sm font-black flex items-center justify-center gap-2 transition-all ${availableSlots > 0 ? 'bg-blue-600 text-white shadow-xl shadow-blue-100 hover:bg-blue-700' : 'bg-gray-200 text-gray-400'}`}>
               <Zap size={18} fill="currentColor" /> {buttonText}
             </button>

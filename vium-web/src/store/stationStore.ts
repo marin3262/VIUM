@@ -46,23 +46,34 @@ export const useStationStore = create<StationState>((set, get) => ({
   setOnlyAvailable: (available) => set({ onlyAvailable: available }),
 
   getAvailableSlots: (station) => {
-    return station.chargers.filter(c => c.status === 'Available').length;
+    if (!station || !Array.isArray(station.chargers)) return 0;
+    return station.chargers.filter(c => c && c.status === 'Available').length;
   },
 
   getFilteredStations: () => {
-    const { stations, activeFilter, selectedConnector, onlyAvailable } = get();
-    return stations.filter((station) => {
-      // 1. 타입 필터링 (급속/완속)
-      const typeMatch = activeFilter === 'All' || station.chargers.some(c => c.charger_type === activeFilter);
+    try {
+      const { stations = [], activeFilter, selectedConnector, onlyAvailable } = get();
       
-      // 2. 커넥터 필터링 (DC Combo/Chademo 등)
-      const connectorMatch = selectedConnector === 'All' || station.chargers.some(c => c.connector_type.includes(selectedConnector));
-      
-      // 3. 이용 가능 여부 필터링
-      const availableCount = station.chargers.filter(c => c.status === 'Available').length;
-      const availableMatch = !onlyAvailable || availableCount > 0;
-      
-      return typeMatch && connectorMatch && availableMatch;
-    });
+      if (!Array.isArray(stations)) return [];
+
+      return stations.filter((station) => {
+        if (!station || !Array.isArray(station.chargers)) return false;
+
+        // 1. 타입 필터링 (급속/완속)
+        const typeMatch = activeFilter === 'All' || station.chargers.some(c => c?.charger_type === activeFilter);
+        
+        // 2. 커넥터 필터링 (DC Combo/Chademo 등)
+        const connectorMatch = selectedConnector === 'All' || station.chargers.some(c => (c?.connector_type || '').includes(selectedConnector));
+        
+        // 3. 이용 가능 여부 필터링
+        const availableCount = station.chargers.filter(c => c?.status === 'Available').length;
+        const availableMatch = !onlyAvailable || availableCount > 0;
+        
+        return typeMatch && connectorMatch && availableMatch;
+      });
+    } catch (err) {
+      console.error("[StationStore] filtering crash prevented:", err);
+      return [];
+    }
   },
 }));
