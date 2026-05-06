@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Zap, Bell, ShieldCheck, User } from 'lucide-react';
+import { Zap, Bell, ShieldCheck, User, LogOut, LogIn } from 'lucide-react';
 import { useUserStore } from '../../store/userStore';
 import { useNotificationStore } from '../../store/notificationStore';
 import { NotificationPanel } from '../reward/NotificationPanel';
@@ -7,14 +7,16 @@ import { NotificationPanel } from '../reward/NotificationPanel';
 interface HeaderProps {
   isAdmin: boolean;
   onToggleAdmin: () => void;
+  onOpenAuth: () => void; // 신규: 로그인 모달 오픈 액션
 }
 
-export const Header: React.FC<HeaderProps> = ({ isAdmin, onToggleAdmin }) => {
-  const { user } = useUserStore();
+export const Header: React.FC<HeaderProps> = ({ isAdmin, onToggleAdmin, onOpenAuth }) => {
+  const { user, isAuthenticated, logout } = useUserStore();
   const { notifications } = useNotificationStore();
   const [isNotiOpen, setIsNotiOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-  // --- 역할 기반 배지 카운트 필터링 (격리 완료) ---
+  // --- 역할 기반 배지 카운트 필터링 ---
   const currentRole = isAdmin ? 'ADMIN' : 'USER';
   const unreadCount = notifications.filter(n => n.role === currentRole && !n.isRead).length;
 
@@ -29,15 +31,17 @@ export const Header: React.FC<HeaderProps> = ({ isAdmin, onToggleAdmin }) => {
         </div>
 
         <div className="flex items-center gap-4">
-          <button 
-            onClick={onToggleAdmin}
-            className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black transition-all ${
-              isAdmin ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-            }`}
-          >
-            {isAdmin ? <User size={14} /> : <ShieldCheck size={14} />}
-            {isAdmin ? '사용자 모드' : '관리자 모드'}
-          </button>
+          {isAuthenticated && (
+            <button 
+              onClick={onToggleAdmin}
+              className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black transition-all ${
+                isAdmin ? 'bg-blue-600 text-white shadow-lg' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              {isAdmin ? <User size={14} /> : <ShieldCheck size={14} />}
+              {isAdmin ? '사용자 모드' : '관리자 모드'}
+            </button>
+          )}
 
           <div className="relative">
             <button 
@@ -54,11 +58,36 @@ export const Header: React.FC<HeaderProps> = ({ isAdmin, onToggleAdmin }) => {
             <NotificationPanel isOpen={isNotiOpen} onClose={() => setIsNotiOpen(false)} isAdminMode={isAdmin} />
           </div>
           
-          <div className="hidden md:flex items-center gap-2 p-1 pr-3 hover:bg-gray-100 rounded-full transition-all cursor-pointer">
-            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold overflow-hidden">
-              {user?.nickname?.[0] || <User size={16} />}
-            </div>
-            <span className="text-sm font-medium">{user?.nickname || '로딩 중...'} {user ? '님' : ''}</span>
+          <div className="relative">
+            {isAuthenticated ? (
+              <div 
+                className="flex items-center gap-2 p-1 pr-3 hover:bg-gray-100 rounded-full transition-all cursor-pointer group"
+                onClick={() => setIsProfileOpen(!isProfileOpen)}
+              >
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold overflow-hidden border-2 border-transparent group-hover:border-blue-200 transition-all">
+                  {user?.nickname?.[0] || <User size={16} />}
+                </div>
+                <span className="text-sm font-black text-gray-700 hidden md:inline">{user?.nickname || '회원'}님</span>
+                
+                {isProfileOpen && (
+                  <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-[24px] shadow-2xl border border-gray-100 p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <button 
+                      onClick={() => { logout(); setIsProfileOpen(false); }}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-2xl text-xs font-black transition-colors"
+                    >
+                      <LogOut size={16} /> 로그아웃
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button 
+                onClick={onOpenAuth}
+                className="flex items-center gap-2 bg-gray-900 text-white px-5 py-2.5 rounded-2xl text-xs font-black shadow-lg shadow-gray-200 active:scale-95 transition-all hover:bg-gray-800"
+              >
+                <LogIn size={14} /> 로그인
+              </button>
+            )}
           </div>
         </div>
       </div>

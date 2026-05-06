@@ -9,6 +9,7 @@ class User(Base):
     email = Column(String(100), unique=True, nullable=False)
     password = Column(String(255), nullable=False)
     nickname = Column(String(50))
+    is_admin = Column(Boolean, default=False)
     mileage_balance = Column(Integer, default=0)
     level = Column(String(50), default="에코 드라이버")
     # 신규: 악성 유저 관리를 위한 신뢰도 점수 (추후 확장용)

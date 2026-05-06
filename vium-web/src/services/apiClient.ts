@@ -15,11 +15,29 @@ export interface ApiResponse<T> {
 
 export const apiClient = {
   /**
+   * 공통 헤더 생성 (인증 토큰 포함)
+   */
+  getHeaders: (isMultipart = false) => {
+    const headers: any = {};
+    if (!isMultipart) {
+      headers['Content-Type'] = 'application/json';
+    }
+    
+    const token = localStorage.getItem('vium_token');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    return headers;
+  },
+
+  /**
    * GET 요청
    */
   get: async <T>(endpoint: string): Promise<ApiResponse<T>> => {
     try {
-      const response = await fetch(`${BASE_URL}${endpoint}`);
+      const response = await fetch(`${BASE_URL}${endpoint}`, {
+        headers: apiClient.getHeaders()
+      });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
       return { success: true, data };
@@ -36,12 +54,11 @@ export const apiClient = {
     try {
       const response = await fetch(`${BASE_URL}${endpoint}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: apiClient.getHeaders(),
         body: JSON.stringify(body),
       });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
-      // 보상 데이터가 최상위에 있을 경우 ApiResponse 구조에 맞게 매핑
       return { 
         success: true, 
         data,
@@ -61,7 +78,7 @@ export const apiClient = {
     try {
       const response = await fetch(`${BASE_URL}${endpoint}`, {
         method: 'POST',
-        // headers에 'Content-Type'을 설정하지 않아야 브라우저가 boundary를 자동으로 생성함
+        headers: apiClient.getHeaders(true),
         body: formData,
       });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -80,7 +97,7 @@ export const apiClient = {
     try {
       const response = await fetch(`${BASE_URL}${endpoint}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: apiClient.getHeaders(),
         body: JSON.stringify(body),
       });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);

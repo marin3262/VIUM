@@ -87,10 +87,17 @@ class MileageLog(BaseModel):
         from_attributes = True
 
 # --- User Schemas ---
+class UserCreate(BaseModel):
+    email: str
+    password: str
+    nickname: str
+    admin_code: Optional[str] = None # 관리자 가입용 시크릿 코드
+
 class UserProfile(BaseModel):
     user_id: int
     email: str
     nickname: Optional[str]
+    is_admin: bool
     mileage_balance: int
     level: str
     trust_score: int
@@ -98,6 +105,14 @@ class UserProfile(BaseModel):
 
     class Config:
         from_attributes = True
+
+# --- Token Schemas ---
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenPayload(BaseModel):
+    sub: Optional[int] = None
 
 # --- Response Schemas ---
 class RewardResponse(BaseModel):

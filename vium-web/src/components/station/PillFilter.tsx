@@ -1,11 +1,13 @@
 import React from 'react';
+import { Search } from 'lucide-react';
 import { useStationStore } from '../../store/stationStore';
 
 export const PillFilter: React.FC = () => {
   const { 
     activeFilter, setActiveFilter, 
     selectedConnector, setSelectedConnector,
-    onlyAvailable, setOnlyAvailable 
+    onlyAvailable, setOnlyAvailable,
+    searchQuery, setSearchQuery
   } = useStationStore();
 
   const connectors = [
@@ -17,7 +19,21 @@ export const PillFilter: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 w-full">
+      {/* 0. 지능형 검색 바 (통합형) */}
+      <div className="relative w-full">
+        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+          <Search className="h-4 w-4 text-gray-400" />
+        </div>
+        <input
+          type="text"
+          placeholder="충전소 이름 또는 주소를 검색하세요..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full bg-gray-50 border-none rounded-2xl py-3.5 pl-10 pr-4 text-sm font-bold text-gray-700 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all shadow-inner"
+        />
+      </div>
+
       {/* 1. 충전 타입 필터 */}
       <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
         {['All', '급속', '완속'].map((type) => (
@@ -53,7 +69,7 @@ export const PillFilter: React.FC = () => {
       </div>
 
       {/* 3. 이용 가능 여부 스위치 */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 pt-1">
         <button
           onClick={() => setOnlyAvailable(!onlyAvailable)}
           className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors focus:outline-none ${

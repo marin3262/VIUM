@@ -7,14 +7,29 @@ interface StationModalProps {
   station: ChargingStation | null;
   onClose: () => void;
   onStartCharging: () => void;
+  onShowOnMap: () => void; // 신규: 지도에서 확인하기 액션
 }
 
-export const StationModal: React.FC<StationModalProps> = ({ station, onClose, onStartCharging }) => {
+export const StationModal: React.FC<StationModalProps> = ({ station, onClose, onStartCharging, onShowOnMap }) => {
   if (!station) return null;
 
   const { getAvailableSlots } = useStationStore();
   const availableSlots = getAvailableSlots(station);
   const totalSlots = station.chargers.length;
+
+  // [IoT Demo] 자동 충전 시작 감지 로직
+  React.useEffect(() => {
+    if (!station) return;
+    const isAnyChargerOccupied = station.chargers.some(c => c.status === 'Occupied');
+    
+    if (isAnyChargerOccupied) {
+      console.log('🔌 [IoT] Connector detection! Auto-starting charging flow...');
+      const timer = setTimeout(() => {
+        onStartCharging();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [station?.chargers, onStartCharging]);
 
   // 1. 고장난 충전기 식별 로직
   const faultyChargers = useMemo(() => 
@@ -55,15 +70,26 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
   const maxPrice = Math.max(...displayPriceHistory);
   const priceRange = (maxPrice - minPrice) || 100;
 
+  // 3. 리뷰 정렬 (최신순)
+  const sortedReviews = useMemo(() => {
+    if (!station.reviews) return [];
+    return [...station.reviews].sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+  }, [station.reviews]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
       <div className="bg-white w-full max-w-lg rounded-t-[40px] sm:rounded-[40px] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-10 duration-500 max-h-[95vh] flex flex-col">
         {/* Header */}
-        <div className="relative h-40 sm:h-48 bg-gradient-to-br from-blue-600 to-indigo-700 p-8 flex flex-col justify-end shrink-0">
+        <div className="relative min-h-[160px] bg-gradient-to-br from-blue-600 to-indigo-700 p-8 flex flex-col justify-end shrink-0">
           <button onClick={onClose} className="absolute top-6 right-6 p-2 bg-white/20 hover:bg-white/30 rounded-full text-white transition-all"><X size={20} /></button>
-          <div className="space-y-1">
-            <h2 className="text-2xl font-black text-white">{station.station_name}</h2>
-            <p className="text-blue-100/80 text-xs flex items-center gap-1"><MapPin size={12} /> {station.address}</p>
+          <div className="space-y-2 pr-10">
+            <h2 className="text-2xl font-black text-white leading-tight break-keep">{station.station_name}</h2>
+            <p className="text-blue-100/80 text-xs flex items-start gap-1.5 leading-relaxed">
+              <MapPin size={14} className="shrink-0 mt-0.5" /> 
+              <span>{station.address}</span>
+            </p>
           </div>
         </div>
 
@@ -77,7 +103,7 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
               <div>
                 <h4 className="text-sm font-black text-red-900">충전기 이용 제한 안내</h4>
                 <p className="text-xs text-red-700 mt-1 leading-relaxed">
-                  현재 <span className="font-black underline">{faultyChargers.map(c => c.charger_id.split('_').pop() + '호기').join(', ')}</span>가 고장으로 인해 점검 중입니다. 해당 구역을 제외하고 이용해 주세요.
+                  현재 <span className="font-black underline">{faultyChargers.map(c => c.charger_id.split('_').pop() + '호기').join(', ')}</span>가 고장으로 인해 점검 중입니다.
                 </p>
               </div>
             </div>
@@ -102,7 +128,7 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
             </div>
           </div>
 
-          {/* 스펙 및 성공 정보 (누락 복구) */}
+          {/* 스펙 및 성공 정보 */}
           <div className="bg-gray-50 rounded-[32px] p-5 space-y-4 border border-gray-100">
             <div className="flex justify-between items-center pb-4 border-b border-gray-200/50">
               <div className="flex items-center gap-3">
@@ -117,13 +143,6 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
                 ))}
               </div>
             </div>
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm text-orange-500"><Clock size={16} /></div>
-                <p className="text-sm font-bold text-gray-700">마지막 작동</p>
-              </div>
-              <p className="text-xs font-black text-gray-900">{station.lastSuccessTime || '15분 전'}</p>
-            </div>
           </div>
 
           {/* 요금 그래프 */}
@@ -136,12 +155,11 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
             <div className="h-28 flex items-end justify-between gap-[2px] px-1 pt-2">
               {displayPriceHistory.map((p, i) => {
                 const rawHeight = ((p - minPrice) / priceRange) * 100;
-                const heightValue = Math.max(Math.floor(rawHeight), 8); // 최소 높이 8% 확보
+                const heightValue = Math.max(Math.floor(rawHeight), 8); 
                 const isCurrentHour = i === new Date().getHours();
                 
                 return (
                   <div key={i} className="flex-1 flex flex-col items-center group relative h-full justify-end">
-                    {/* 막대 자체에 물리적 width 보장 */}
                     <div 
                       style={{ 
                         height: `${heightValue}%`,
@@ -151,40 +169,69 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
                       }} 
                       className={`rounded-t-sm transition-all duration-500 ${isCurrentHour ? 'shadow-[0_-2px_8px_rgba(37,99,235,0.4)]' : 'hover:bg-blue-300'}`}
                     ></div>
-                    {i % 6 === 0 && <span className="absolute -bottom-5 left-0 text-[8px] font-bold text-gray-300 whitespace-nowrap">{i}시</span>}
                   </div>
                 );
               })}
             </div>
           </div>
 
-          {/* 리뷰 섹션 */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-black text-gray-900 flex items-center gap-2"><MessageSquare size={16} className="text-blue-500" /> 현장 리뷰</h3>
-            {station.reviews && station.reviews.length > 0 ? (
-              station.reviews.slice(0, 2).map((rev) => (
-                <div key={rev.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-                  <div className="flex justify-between mb-1"><p className="text-xs font-bold text-gray-700">{rev.user_name}</p><div className="flex text-yellow-400"><Star size={10} fill="currentColor" /> <span className="text-[10px] ml-0.5 font-bold text-gray-500">{rev.rating}</span></div></div>
-                  <p className="text-xs text-gray-600 leading-relaxed">{rev.content}</p>
+          {/* [신규] 커뮤니티 리뷰 섹션 */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-black text-gray-900 flex items-center gap-2 px-1">
+              <MessageSquare size={16} className="text-blue-500" /> 커뮤니티 리뷰 ({sortedReviews.length})
+            </h3>
+            
+            <div className="space-y-3">
+              {sortedReviews.length > 0 ? (
+                sortedReviews.map((review, idx) => (
+                  <div key={idx} className="bg-gray-50 p-5 rounded-[28px] border border-gray-100 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-0.5">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Star 
+                              key={i} 
+                              size={10} 
+                              className={i < review.rating ? "text-yellow-400 fill-yellow-400" : "text-gray-200"} 
+                            />
+                          ))}
+                        </div>
+                        <span className="text-[10px] font-black text-gray-400 tracking-tighter italic">@{review.user_name || '익명회원'}</span>
+                      </div>
+                      <span className="text-[9px] font-bold text-gray-300">{new Date(review.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <p className="text-xs font-bold text-gray-700 leading-relaxed break-keep">{review.content}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="py-10 text-center bg-gray-50 rounded-[32px] border-2 border-dashed border-gray-100">
+                  <p className="text-xs font-bold text-gray-400">아직 작성된 리뷰가 없습니다.</p>
+                  <p className="text-[10px] text-gray-300 mt-1">첫 번째 생생한 리뷰를 남겨보세요!</p>
                 </div>
-              ))
-            ) : (
-              <p className="text-center py-4 text-gray-400 text-[11px] italic bg-gray-50 rounded-2xl border border-dashed border-gray-200">아직 작성된 리뷰가 없습니다.</p>
-            )}
+              )}
+            </div>
           </div>
 
-          {/* Buttons */}
-          <div className="flex gap-3 pt-2">
+          {/* Buttons: 3단 레이아웃으로 개선 */}
+          <div className="flex gap-2 pt-2">
             <button 
               onClick={() => {
                 if ((window as any).openReportModal) {
                   (window as any).openReportModal(station.station_id);
                 }
               }} 
-              className="flex-1 bg-white border-2 border-red-100 text-red-500 py-4 rounded-2xl text-sm font-black flex items-center justify-center gap-2 hover:bg-red-50 transition-all"
+              className="flex-1 bg-white border-2 border-red-100 text-red-500 py-4 rounded-2xl text-[11px] font-black flex flex-col items-center justify-center gap-1 hover:bg-red-50 transition-all"
             >
-              <ShieldAlert size={18} /> 고장 제보
+              <ShieldAlert size={16} /> 제보
             </button>
+            
+            <button 
+              onClick={onShowOnMap}
+              className="flex-1 bg-blue-50 border-2 border-blue-100 text-blue-600 py-4 rounded-2xl text-[11px] font-black flex flex-col items-center justify-center gap-1 hover:bg-blue-100 transition-all"
+            >
+              <MapPin size={16} /> 위치확인
+            </button>
+
             <button onClick={onStartCharging} disabled={availableSlots === 0} className={`flex-[2] py-4 rounded-2xl text-sm font-black flex items-center justify-center gap-2 transition-all ${availableSlots > 0 ? 'bg-blue-600 text-white shadow-xl shadow-blue-100 hover:bg-blue-700' : 'bg-gray-200 text-gray-400'}`}>
               <Zap size={18} fill="currentColor" /> {buttonText}
             </button>

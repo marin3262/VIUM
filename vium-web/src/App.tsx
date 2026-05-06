@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { MapPin, Coins, Search, ShieldCheck, MessageSquare, ArrowRight, X, Maximize2, Minimize2, Plus } from 'lucide-react';
+import { MapPin, Coins, Search, ShieldCheck, MessageSquare, ArrowRight, X, Maximize2, Minimize2, Plus, Star } from 'lucide-react';
 
 // --- Types ---
 import type { ChargingStation } from './types';
@@ -17,6 +17,7 @@ import { RewardToast } from './components/reward/RewardToast';
 import { NotificationOverlay } from './components/reward/NotificationOverlay';
 import { PillFilter } from './components/station/PillFilter';
 import { StationMap } from './components/station/StationMap';
+import { AuthModal } from './components/layout/AuthModal';
 
 // --- Stores & Hooks ---
 import { useStationStore } from './store/stationStore';
@@ -25,12 +26,13 @@ import { useMileage } from './hooks/useMileage';
 import { useNotificationStore } from './store/notificationStore';
 
 function App() {
-  const { user, fetchUser, pendingReviewStation, setPendingReview } = useUserStore();
+  const { user, fetchUser, pendingReviewStation, setPendingReview, isAuthenticated, token } = useUserStore();
   const { stations = [], getFilteredStations, fetchStations, isLoading: isStationsLoading } = useStationStore();
   const { rewardToast, isCounting, triggerRewardAnimation } = useMileage();
   const { addNotification } = useNotificationStore();
 
   const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
   const [reportTargetId, setReportTargetId] = useState<string | null>(null);
   const [chargingTargetId, setChargingTargetId] = useState<string | null>(null);
@@ -52,22 +54,38 @@ function App() {
     chargingTargetId ? (stations.find(s => s.station_id === chargingTargetId) || null) : null, 
   [stations, chargingTargetId]);
 
-  // --- 서버 데이터 Polling ---
+  // --- 서버 데이터 로드 (게스트/회원 공통) ---
   useEffect(() => {
+    // 1. 유저 정보 로드 (토큰이 있을 때만 내부적으로 실행됨)
     fetchUser();
+    
+    // 2. 충전소 정보 로드 (토큰 유무와 상관없이 항상 실행)
     fetchStations();
+    
+    // 3. 실시간 Polling (3초 간격)
     const interval = setInterval(() => {
       fetchStations();
     }, 3000);
+    
     return () => clearInterval(interval);
-  }, [fetchUser, fetchStations]);
+  }, [fetchUser, fetchStations, token]); // 토큰 변화 시 재로드 보장
 
-  // 전역 브릿지 함수 (ID 기반으로 변경하여 안정성 확보)
+  // 전역 브릿지 함수 고도화 (권한 체크 포함)
   useEffect(() => {
     (window as any).openStationDetail = (stationId: string) => {
       if (stationId) setSelectedStationId(stationId);
     };
     (window as any).openReportModal = (stationId: string) => {
+      if (!isAuthenticated) {
+        addNotification({
+          role: 'USER',
+          type: 'WARNING',
+          title: '회원 전용 기능 🔐',
+          message: '허위 제보 방지를 위해 고장 제보는 로그인한 회원만 가능합니다.'
+        });
+        setIsAuthModalOpen(true);
+        return;
+      }
       if (stationId) {
         setSelectedStationId(null);
         setReportTargetId(stationId);
@@ -77,7 +95,7 @@ function App() {
       delete (window as any).openStationDetail;
       delete (window as any).openReportModal;
     };
-  }, []);
+  }, [isAuthenticated, addNotification]);
 
   const handleStartChargingFlow = () => {
     if (selectedStationId) {
@@ -87,14 +105,42 @@ function App() {
     }
   };
 
+  const handleShowOnMap = () => {
+    if (selectedStationId) {
+      const id = selectedStationId;
+      setSelectedStationId(null);
+      setIsMapExpanded(true);
+      setTimeout(() => {
+        if (window.focusStationOnMap) {
+          window.focusStationOnMap(id);
+        }
+      }, 400); 
+    }
+  };
+
   const handleChargingComplete = async (amount: number) => {
     const finishedStationId = chargingTargetId;
     if (!finishedStationId) return;
+
+    const finishedStation = stations.find(s => s.station_id === finishedStationId);
     setChargingTargetId(null);
-    const { completeCharging } = useUserStore.getState();
-    const success = await completeCharging(finishedStationId);
+
+    if (!isAuthenticated) {
+      addNotification({
+        role: 'USER',
+        type: 'INFO',
+        title: '포인트 적립 안내 🎁',
+        message: '로그인하시면 방금 완료하신 충전 보상을 받으실 수 있습니다!'
+      });
+      return;
+    }
+
+    const success = await useUserStore.getState().completeCharging(finishedStationId);
     if (success) {
       triggerRewardAnimation(amount, "충전 완료 보상");
+      if (finishedStation) {
+        setPendingReview(finishedStation);
+      }
       fetchStations();
     }
   };
@@ -103,13 +149,33 @@ function App() {
   const pagedStations = useMemo(() => filteredStations.slice(0, visibleCount), [filteredStations, visibleCount]);
   const hasMore = filteredStations.length > visibleCount;
 
+  // 관리자 모드 진입 보안 가드
+  useEffect(() => {
+    if (isAdminMode && (!user || !user.is_admin)) {
+      setIsAdminMode(false);
+      addNotification({
+        role: 'USER',
+        type: 'ERROR',
+        title: '접근 차단 🚫',
+        message: '관리자 권한이 없습니다.'
+      });
+    }
+  }, [isAdminMode, user, addNotification]);
+
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 text-gray-900 font-sans">
       <RewardToast show={rewardToast.show} amount={rewardToast.amount} />
       <NotificationOverlay isAdminMode={isAdminMode} />
       
+      {isAuthModalOpen && <AuthModal onClose={() => setIsAuthModalOpen(false)} />}
+      
       {selectedStation && (
-        <StationModal station={selectedStation} onClose={() => setSelectedStationId(null)} onStartCharging={handleStartChargingFlow} />
+        <StationModal 
+          station={selectedStation} 
+          onClose={() => setSelectedStationId(null)} 
+          onStartCharging={handleStartChargingFlow}
+          onShowOnMap={handleShowOnMap}
+        />
       )}
       {reportTarget && (
         <ReportModal station={reportTarget} onClose={() => setReportTargetId(null)} />
@@ -128,10 +194,14 @@ function App() {
         />
       )}
 
-      <Header isAdmin={isAdminMode} onToggleAdmin={() => setIsAdminMode(!isAdminMode)} />
+      <Header 
+        isAdmin={isAdminMode} 
+        onToggleAdmin={() => setIsAdminMode(!isAdminMode)} 
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+      />
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 md:py-10">
-        {isAdminMode ? (
+        {isAdminMode && user?.is_admin ? (
           <AdminDashboard />
         ) : (
           <div className="flex flex-col gap-8">
@@ -159,6 +229,39 @@ function App() {
                   <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
                 </div>
 
+                {pendingReviewStation && (
+                  <button 
+                    onClick={() => {
+                      if (isAuthenticated) {
+                        setIsReviewModalOpen(true);
+                      } else {
+                        addNotification({
+                          role: 'USER',
+                          type: 'INFO',
+                          title: '로그인이 필요합니다 🔐',
+                          message: '리뷰를 남기고 포인트를 받으시려면 먼저 로그인해 주세요.'
+                        });
+                        setIsAuthModalOpen(true);
+                      }
+                    }}
+                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 rounded-3xl p-6 text-white shadow-xl shadow-purple-100 flex flex-col gap-4 group transition-all active:scale-95 animate-in slide-in-from-left-5 duration-500"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="bg-white/20 p-2 rounded-xl backdrop-blur-md">
+                        <Star size={20} className="text-yellow-300 fill-yellow-300" />
+                      </div>
+                      <div className="bg-black/20 px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase">Special Quest</div>
+                    </div>
+                    <div className="text-left">
+                      <h4 className="font-black text-sm leading-tight italic">방금 이용하신 충전소는 어떠셨나요?</h4>
+                      <p className="text-[11px] text-purple-100 mt-1 font-medium">{pendingReviewStation.station_name} 리뷰 남기고 100P 받기</p>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] font-black bg-white/10 w-fit px-4 py-2 rounded-xl group-hover:bg-white/20 transition-colors">
+                      리뷰 작성하기 <ArrowRight size={12} />
+                    </div>
+                  </button>
+                )}
+
                 <div className="hidden lg:block bg-white rounded-3xl p-6 border border-gray-100 shadow-sm h-[320px] overflow-y-auto no-scrollbar">
                   <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm"><Search size={16} className="text-blue-500" />최근 활동</h3>
                   <div className="space-y-4">
@@ -173,6 +276,9 @@ function App() {
                         </span>
                       </div>
                     ))}
+                    {!user?.mileage_logs?.length && (
+                      <div className="text-center py-10 text-gray-400 text-xs">활동 내역이 없습니다.</div>
+                    )}
                   </div>
                 </div>
               </div>

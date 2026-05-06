@@ -2,6 +2,8 @@ import type { ChargingStation, Review } from '../types';
 import { apiClient } from './apiClient';
 import type { ApiResponse } from './apiClient';
 
+const BASE_URL = 'http://localhost:8000/api/v1';
+
 /**
  * 충전소 관련 데이터 통신을 전담하는 서비스입니다.
  */
@@ -61,10 +63,30 @@ export const stationService = {
   },
 
   updateChargerStatus: async (chargerId: string, status: 'Available' | 'Faulty' | 'Charging'): Promise<ApiResponse<any>> => {
-    return await apiClient.patch<any>(`/chargers/${chargerId}/status?status=${status}`, {});
+    return await apiClient.patch<any>(`/chargers/${chargerId}/status`, { status });
   },
 
   completeCharging: async (stationId: string): Promise<ApiResponse<any>> => {
     return await apiClient.post<any>(`/stations/${stationId}/complete-charging`, {});
+  },
+
+  // --- Auth Services ---
+  signup: async (userData: any): Promise<ApiResponse<any>> => {
+    return await apiClient.post<any>('/auth/signup', userData);
+  },
+
+  login: async (credentials: FormData): Promise<ApiResponse<any>> => {
+    // OAuth2PasswordBearer는 x-www-form-urlencoded 형식을 기대함
+    try {
+      const response = await fetch(`${BASE_URL}/auth/login`, {
+        method: 'POST',
+        body: credentials,
+      });
+      const data = await response.json();
+      if (response.ok) return { success: true, data };
+      return { success: false, error: data.detail || '로그인 실패' };
+    } catch (error) {
+      return { success: false, error: '서버 통신 오류' };
+    }
   }
 };

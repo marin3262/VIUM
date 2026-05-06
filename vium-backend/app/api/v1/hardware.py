@@ -32,30 +32,39 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
     """
     아두이노(ESP32)로부터 충전 커넥터 상태를 수신합니다.
     """
-    # [시니어 아키텍트 로그 추가]
-    print("\n" + "🔌" * 20)
-    print(f"🚨 [IoT] CONNECTOR SIGNAL RECEIVED: {datetime.now().strftime('%H:%M:%S')}")
-    print(f"📍 ID: {signal.charger_id} | Status: {signal.status}")
-    print("🔌" * 20 + "\n")
-
     charger = db.query(models.Charger).filter(models.Charger.charger_id == signal.charger_id).first()
     if not charger:
+        print(f"❌ [IoT Error] Charger ID {signal.charger_id} not found in database.")
         raise HTTPException(status_code=404, detail=f"Charger {signal.charger_id} not found")
 
-    # 상태 전이 (단순 매핑)
+    station = charger.station
+    
+    # [시니어 아키텍트 고정밀 로그]
+    print("\n" + "⚡" * 25)
+    print(f"📡 [IoT] CONNECTOR EVENT DETECTED")
+    print(f"⏰ TIME    : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"📍 STATION : {station.station_name if station else 'N/A'} ({charger.station_id})")
+    print(f"🔌 CHARGER : {charger.charger_id} ({charger.charger_type})")
+    print(f"📝 SIGNAL  : {signal.status}")
+    print("⚡" * 25 + "\n")
+
+    # 상태 전이 (단순 매핑: CONNECTED -> Occupied, DISCONNECTED -> Available)
     old_status = charger.status
     new_status = "Occupied" if signal.status == "CONNECTED" else "Available"
     
     if old_status != new_status:
         charger.status = new_status
         db.commit()
+        # Redis 동기화 (실시간 잔여석 통계용)
         update_redis_slots(charger.station_id, db)
+        
+        print(f"✅ [Status Change] {charger.charger_id}: {old_status} -> {new_status}")
         return {
             "success": True, 
             "message": f"Charger {signal.charger_id} status changed: {old_status} -> {new_status}"
         }
 
-    return {"success": True, "message": "No status change required (Same as current)"}
+    return {"success": True, "message": "No status change (Already in sync)"}
 
 @router.post("/cameras", response_model=schemas.ActionResponse)
 def receive_camera_signal(signal: schemas.CameraSignal, db: Session = Depends(get_db)):

@@ -7,6 +7,7 @@ declare global {
     openStationDetail?: (stationId: string) => void;
     openReportModal?: (stationId: string) => void;
     closeStationOverlay?: () => void;
+    focusStationOnMap?: (stationId: string) => void;
   }
 }
 
@@ -94,15 +95,15 @@ export function StationMap({ stations = [], onMarkerClick, isLoading }: StationM
         minLevel: 6,
         styles: [{
           width: '52px', height: '52px',
-          background: 'rgba(59, 130, 246, 0.9)',
+          background: 'rgba(59, 130, 246, 0.85)',
           borderRadius: '50%',
           color: '#fff',
           textAlign: 'center',
           fontWeight: '900',
           lineHeight: '52px',
           fontSize: '12px',
-          boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4)',
-          border: '2px solid white'
+          boxShadow: '0 8px 24px rgba(59, 130, 246, 0.3)',
+          border: '2px solid rgba(255, 255, 255, 0.8)'
         }]
       });
 
@@ -160,31 +161,33 @@ export function StationMap({ stations = [], onMarkerClick, isLoading }: StationM
         title: station.station_name,
       });
 
-      window.kakao.maps.event.addListener(marker, 'click', () => {
+      const handleMarkerClick = () => {
         map.panTo(position);
         
         const content = document.createElement('div');
         content.innerHTML = `
           <div style="
-            background: #FFFFFF; 
+            background: rgba(255, 255, 255, 0.85); 
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             border-radius: 28px; 
             width: 240px; 
             overflow: hidden; 
-            border: 1px solid #E2E8F0; 
+            border: 1px solid rgba(255, 255, 255, 0.3); 
             position: relative; 
-            box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.25);
           ">
-            <div onclick="window.closeStationOverlay()" style="position:absolute; top:16px; right:16px; width:24px; height:24px; border-radius:50%; background:#F1F5F9; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#475569; border:1px solid #E2E8F0; z-index:10;">
+            <div onclick="window.closeStationOverlay()" style="position:absolute; top:16px; right:16px; width:24px; height:24px; border-radius:50%; background:rgba(255,255,255,0.5); display:flex; align-items:center; justify-content:center; cursor:pointer; color:#475569; border:1px solid rgba(255,255,255,0.5); z-index:10;">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
             </div>
 
             <div style="padding: 24px;">
               <div style="margin-bottom:12px; padding-right:24px;">
-                <div style="font-size:9px; font-weight:900; color:#94A3B8; margin-bottom:2px; letter-spacing:0.1em;">STATION MONITORING</div>
+                <div style="font-size:9px; font-weight:900; color:#64748B; margin-bottom:2px; letter-spacing:0.1em;">STATION MONITORING</div>
                 <div style="font-size:17px; font-weight:900; color:#0F172A; line-height:1.2;">${station.station_name}</div>
               </div>
               
-              <div style="display:flex; align-items:center; gap:8px; margin-bottom:20px; background:#F8FAFC; padding:10px 14px; border-radius:14px; border: 1px solid #F1F5F9;">
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:20px; background:rgba(255,255,255,0.4); padding:10px 14px; border-radius:14px; border: 1px solid rgba(255,255,255,0.5);">
                 <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:${markerColor};"></span>
                 <span style="font-size:12px; font-weight:800; color:${markerColor};">잔여 ${availableCount}석 이용가능</span>
               </div>
@@ -193,20 +196,23 @@ export function StationMap({ stations = [], onMarkerClick, isLoading }: StationM
                 <button onclick="window.openStationDetail('${station.station_id}')" style="flex:1.5; padding:14px; background-color:#1E293B; border:none; border-radius:16px; font-size:12px; font-weight:900; color:#FFFFFF; cursor:pointer; transition: all 0.2s; box-shadow: 0 8px 16px rgba(0,0,0,0.1);">
                   상세 정보
                 </button>
-                <button onclick="window.openReportModal('${station.station_id}')" style="flex:1; padding:14px; background-color:#FFF; border:2px solid #FEE2E2; border-radius:16px; font-size:12px; font-weight:900; color:#EF4444; cursor:pointer; transition: all 0.2s;">
+                <button onclick="window.openReportModal('${station.station_id}')" style="flex:1; padding:14px; background-color:rgba(255,255,255,0.6); border:2px solid #FEE2E2; border-radius:16px; font-size:12px; font-weight:900; color:#EF4444; cursor:pointer; transition: all 0.2s;">
                   고장 제보
                 </button>
               </div>
             </div>
             
-            <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%) rotate(45deg); width: 16px; height: 16px; background: #FFFFFF; border-right: 1px solid #E2E8F0; border-bottom: 1px solid #E2E8F0;"></div>
+            <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%) rotate(45deg); width: 16px; height: 16px; background: rgba(255, 255, 255, 0.85); border-right: 1px solid rgba(255, 255, 255, 0.3); border-bottom: 1px solid rgba(255, 255, 255, 0.3); z-index: -1;"></div>
           </div>
         `;
         
         customOverlayRef.current.setContent(content);
         customOverlayRef.current.setPosition(position);
         customOverlayRef.current.setMap(map);
-      });
+      };
+
+      window.kakao.maps.event.addListener(marker, 'click', handleMarkerClick);
+      (marker as any).triggerClick = handleMarkerClick; // 외부 호출용 바인딩
 
       newMarkers.push(marker);
     });
@@ -219,6 +225,22 @@ export function StationMap({ stations = [], onMarkerClick, isLoading }: StationM
       isInitialLoadRef.current = false;
     }
   }, [stations, isSdkReady]);
+
+  // 4. 외부 트리거 수신용
+  useEffect(() => {
+    window.focusStationOnMap = (stationId: string) => {
+      const targetIndex = stations.findIndex(s => s.station_id === stationId);
+      if (targetIndex >= 0 && markersRef.current[targetIndex]) {
+        const marker = markersRef.current[targetIndex];
+        if (marker.triggerClick) {
+          marker.triggerClick();
+        }
+      }
+    };
+    return () => {
+      delete window.focusStationOnMap;
+    };
+  }, [stations]);
 
   return (
     <div className="w-full h-full relative z-0">
