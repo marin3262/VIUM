@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { MapPin, Coins, Search, ShieldCheck, MessageSquare, ArrowRight, X, Maximize2, Minimize2, Plus, Star } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { MapPin, Coins, Search, ShieldCheck, ArrowRight, Maximize2, Minimize2, Plus, Star } from 'lucide-react';
 
 // --- Types ---
 import type { ChargingStation } from './types';
@@ -17,6 +17,7 @@ import { RewardToast } from './components/reward/RewardToast';
 import { NotificationOverlay } from './components/reward/NotificationOverlay';
 import { PillFilter } from './components/station/PillFilter';
 import { StationMap } from './components/station/StationMap';
+import { StationSummaryOverlay } from './components/station/StationSummaryOverlay';
 import { AuthModal } from './components/layout/AuthModal';
 
 // --- Stores & Hooks ---
@@ -27,13 +28,23 @@ import { useNotificationStore } from './store/notificationStore';
 
 function App() {
   const { user, fetchUser, pendingReviewStation, setPendingReview, isAuthenticated, token } = useUserStore();
-  const { stations = [], getFilteredStations, fetchStations, isLoading: isStationsLoading } = useStationStore();
+  const { 
+    stations = [], 
+    getFilteredStations, 
+    fetchStations, 
+    isLoading: isStationsLoading,
+    activeFilter,
+    selectedConnector,
+    onlyAvailable,
+    searchQuery
+  } = useStationStore();
   const { rewardToast, isCounting, triggerRewardAnimation } = useMileage();
   const { addNotification } = useNotificationStore();
 
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
+  const [summaryStationId, setSummaryStationId] = useState<string | null>(null);
   const [reportTargetId, setReportTargetId] = useState<string | null>(null);
   const [chargingTargetId, setChargingTargetId] = useState<string | null>(null);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
@@ -41,10 +52,16 @@ function App() {
   
   const [visibleCount, setVisibleCount] = useState(6);
 
-  // --- 반응형 데이터 추출 ---
+  // --- 반응형 데이터 추출 (메모이제이션 강화) ---
+  const filteredStations = useMemo(() => getFilteredStations() || [], [stations, activeFilter, selectedConnector, onlyAvailable, searchQuery, getFilteredStations]);
+  
   const selectedStation = useMemo(() => 
     selectedStationId ? (stations.find(s => s.station_id === selectedStationId) || null) : null, 
   [stations, selectedStationId]);
+
+  const summaryStation = useMemo(() => 
+    summaryStationId ? (stations.find(s => s.station_id === summaryStationId) || null) : null, 
+  [stations, summaryStationId]);
 
   const reportTarget = useMemo(() => 
     reportTargetId ? (stations.find(s => s.station_id === reportTargetId) || null) : null, 
@@ -54,23 +71,64 @@ function App() {
     chargingTargetId ? (stations.find(s => s.station_id === chargingTargetId) || null) : null, 
   [stations, chargingTargetId]);
 
+  // --- 핸들러 메모이제이션 (지도 컴포넌트 최적화용) ---
+  const handleMarkerClick = useCallback((s: ChargingStation) => {
+    setSelectedStationId(null);
+    setSummaryStationId(s.station_id);
+  }, []);
+
+  const handleMapClick = useCallback(() => {
+    setSummaryStationId(null);
+  }, []);
+
+  const handleStationCardClick = useCallback((s: ChargingStation) => {
+    setSelectedStationId(s.station_id);
+  }, []);
+
   // --- 서버 데이터 로드 (게스트/회원 공통) ---
   useEffect(() => {
-    // 1. 유저 정보 로드 (토큰이 있을 때만 내부적으로 실행됨)
     fetchUser();
-    
-    // 2. 충전소 정보 로드 (토큰 유무와 상관없이 항상 실행)
     fetchStations();
-    
-    // 3. 실시간 Polling (3초 간격)
     const interval = setInterval(() => {
       fetchStations();
     }, 3000);
-    
     return () => clearInterval(interval);
-  }, [fetchUser, fetchStations, token]); // 토큰 변화 시 재로드 보장
+  }, [fetchUser, fetchStations, token]);
 
-  // 전역 브릿지 함수 고도화 (권한 체크 포함)
+  // --- 하드웨어 자동 충전 감지 브릿지 로직 ---
+  const [prevStations, setPrevStations] = useState<ChargingStation[]>([]);
+  useEffect(() => {
+    if (prevStations.length > 0 && stations.length > 0) {
+      let newConnectionStationId: string | null = null;
+      for (const station of stations) {
+        const prevStation = prevStations.find(s => s.station_id === station.station_id);
+        if (prevStation) {
+          for (const charger of station.chargers) {
+            const prevCharger = prevStation.chargers.find(c => c.charger_id === charger.charger_id);
+            if (prevCharger && prevCharger.status !== 'Charging' && charger.status === 'Charging') {
+              newConnectionStationId = station.station_id;
+              break;
+            }
+          }
+        }
+        if (newConnectionStationId) break;
+      }
+      
+      // 하드웨어 연결이 감지되면 자동으로 충전 플로우 모달을 띄웁니다.
+      if (newConnectionStationId) {
+        setChargingTargetId(prev => {
+          if (!prev) {
+            console.log(`🔌 [IoT] Auto-detected connection. Starting flow for: ${newConnectionStationId}`);
+            return newConnectionStationId;
+          }
+          return prev;
+        });
+      }
+    }
+    setPrevStations(stations);
+  }, [stations]);
+
+  // 전역 브릿지 함수 고도화
   useEffect(() => {
     (window as any).openStationDetail = (stationId: string) => {
       if (stationId) setSelectedStationId(stationId);
@@ -97,18 +155,11 @@ function App() {
     };
   }, [isAuthenticated, addNotification]);
 
-  const handleStartChargingFlow = () => {
-    if (selectedStationId) {
-      const targetId = selectedStationId;
-      setSelectedStationId(null);
-      setChargingTargetId(targetId);
-    }
-  };
-
   const handleShowOnMap = () => {
     if (selectedStationId) {
       const id = selectedStationId;
       setSelectedStationId(null);
+      setSummaryStationId(id);
       setIsMapExpanded(true);
       setTimeout(() => {
         if (window.focusStationOnMap) {
@@ -145,7 +196,6 @@ function App() {
     }
   };
 
-  const filteredStations = getFilteredStations() || [];
   const pagedStations = useMemo(() => filteredStations.slice(0, visibleCount), [filteredStations, visibleCount]);
   const hasMore = filteredStations.length > visibleCount;
 
@@ -173,7 +223,6 @@ function App() {
         <StationModal 
           station={selectedStation} 
           onClose={() => setSelectedStationId(null)} 
-          onStartCharging={handleStartChargingFlow}
           onShowOnMap={handleShowOnMap}
         />
       )}
@@ -284,14 +333,26 @@ function App() {
               </div>
 
               <div className={`${isMapExpanded ? 'lg:col-span-3' : 'lg:col-span-2'} space-y-6 transition-all duration-500`}>
-                <div className={`bg-white rounded-3xl border border-gray-100 shadow-lg overflow-hidden relative group z-0 transition-all duration-500 ${isMapExpanded ? 'h-[600px]' : 'h-64 md:h-80'}`}>
+                <div className={`bg-white rounded-3xl border border-gray-100 shadow-lg overflow-hidden relative group z-0 transition-[height,width] duration-500 ease-in-out ${isMapExpanded ? 'h-[600px]' : 'h-64 md:h-80'}`} style={{ willChange: 'height, width' }}>
                   <div className="absolute inset-0 z-0">
                     <StationMap 
                       stations={filteredStations} 
-                      onMarkerClick={(s) => setSelectedStationId(s.station_id)} 
+                      onMarkerClick={handleMarkerClick}
+                      onMapClick={handleMapClick}
                       isLoading={isStationsLoading} 
                     />
                   </div>
+                  
+                  {summaryStation && (
+                    <StationSummaryOverlay 
+                      station={summaryStation} 
+                      onClose={() => setSummaryStationId(null)}
+                      onViewDetail={() => {
+                        setSummaryStationId(null);
+                        setSelectedStationId(summaryStation.station_id);
+                      }}
+                    />
+                  )}
                   
                   <div className="absolute top-4 left-4 z-10">
                     <button 
@@ -332,7 +393,7 @@ function App() {
 
                   <div className={`grid grid-cols-1 ${isMapExpanded ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4 transition-all duration-500`}>
                     {pagedStations.map((station) => (
-                      <StationCard key={station.station_id} station={station} onClick={(s) => setSelectedStationId(s.station_id)} />
+                      <StationCard key={station.station_id} station={station} onClick={handleStationCardClick} />
                     ))}
                     {!isStationsLoading && filteredStations.length === 0 && (
                       <div className="col-span-full py-20 text-center space-y-3 text-gray-400 font-medium bg-white rounded-[40px] border-2 border-dashed border-gray-100">

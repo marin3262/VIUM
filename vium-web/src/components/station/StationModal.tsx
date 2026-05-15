@@ -1,35 +1,24 @@
 import React, { useMemo } from 'react';
-import { X, MapPin, Zap, Clock, ShieldAlert, Navigation, Star, TrendingUp, MessageSquare, AlertCircle } from 'lucide-react';
-import type { ChargingStation } from '../../types';
+import { 
+  X, MapPin, Zap, Clock, ShieldAlert, Navigation, Star, TrendingUp, 
+  MessageSquare, AlertCircle, Car, Activity, Power, Wrench
+} from 'lucide-react';
+import type { ChargingStation, StationStatus } from '../../types';
 import { useStationStore } from '../../store/stationStore';
+import { getConnectorName } from '../../types/constants';
 
 interface StationModalProps {
   station: ChargingStation | null;
   onClose: () => void;
-  onStartCharging: () => void;
   onShowOnMap: () => void; // 신규: 지도에서 확인하기 액션
 }
 
-export const StationModal: React.FC<StationModalProps> = ({ station, onClose, onStartCharging, onShowOnMap }) => {
+export const StationModal: React.FC<StationModalProps> = ({ station, onClose, onShowOnMap }) => {
   if (!station) return null;
 
   const { getAvailableSlots } = useStationStore();
   const availableSlots = getAvailableSlots(station);
   const totalSlots = station.chargers.length;
-
-  // [IoT Demo] 자동 충전 시작 감지 로직
-  React.useEffect(() => {
-    if (!station) return;
-    const isAnyChargerOccupied = station.chargers.some(c => c.status === 'Occupied');
-    
-    if (isAnyChargerOccupied) {
-      console.log('🔌 [IoT] Connector detection! Auto-starting charging flow...');
-      const timer = setTimeout(() => {
-        onStartCharging();
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [station?.chargers, onStartCharging]);
 
   // 1. 고장난 충전기 식별 로직
   const faultyChargers = useMemo(() => 
@@ -70,13 +59,23 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
   const maxPrice = Math.max(...displayPriceHistory);
   const priceRange = (maxPrice - minPrice) || 100;
 
-  // 3. 리뷰 정렬 (최신순)
+  // 3. 리뷰 정렬 및 필터링 (최신순, 노출 상태만)
   const sortedReviews = useMemo(() => {
     if (!station.reviews) return [];
-    return [...station.reviews].sort((a, b) => 
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    );
+    return [...station.reviews]
+      .filter(review => review.status === 'VISIBLE') // 관리자가 숨긴 리뷰 제외
+      .sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
   }, [station.reviews]);
+
+  // [정밀 관제 UI] 상태별 스타일 맵
+  const statusConfig: Record<StationStatus, { label: string, color: string, bg: string, icon: any, anim?: string }> = {
+    'Available': { label: '사용 가능', color: 'text-green-600', bg: 'bg-green-50', icon: Power },
+    'Occupied': { label: '주차 중 (비충전)', color: 'text-orange-500', bg: 'bg-orange-50', icon: Car },
+    'Charging': { label: '충전 중', color: 'text-blue-600', bg: 'bg-blue-50', icon: Zap, anim: 'animate-pulse' },
+    'Faulty': { label: '점검 중', color: 'text-red-600', bg: 'bg-red-50', icon: Wrench }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
@@ -94,21 +93,6 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
         </div>
 
         <div className="p-6 space-y-6 overflow-y-auto no-scrollbar">
-          {/* 고장 충전기 안내 메시지 섹션 */}
-          {faultyChargers.length > 0 && (
-            <div className="bg-red-50 border border-red-100 rounded-[24px] p-5 flex items-start gap-4 animate-pulse">
-              <div className="bg-red-100 p-2 rounded-xl text-red-600">
-                <AlertCircle size={20} />
-              </div>
-              <div>
-                <h4 className="text-sm font-black text-red-900">충전기 이용 제한 안내</h4>
-                <p className="text-xs text-red-700 mt-1 leading-relaxed">
-                  현재 <span className="font-black underline">{faultyChargers.map(c => c.charger_id.split('_').pop() + '호기').join(', ')}</span>가 고장으로 인해 점검 중입니다.
-                </p>
-              </div>
-            </div>
-          )}
-
           {/* Status Grid */}
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-blue-50 p-3 rounded-2xl border border-blue-100 flex flex-col items-center">
@@ -128,20 +112,35 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
             </div>
           </div>
 
-          {/* 스펙 및 성공 정보 */}
-          <div className="bg-gray-50 rounded-[32px] p-5 space-y-4 border border-gray-100">
-            <div className="flex justify-between items-center pb-4 border-b border-gray-200/50">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-sm text-blue-500"><Zap size={16} /></div>
-                <p className="text-sm font-bold text-gray-700">충전기 스펙</p>
-              </div>
-              <div className="text-right">
-                {station.chargers?.map(c => (
-                  <p key={c.charger_id} className="text-xs font-black text-gray-900 mb-1">
-                    {c.charger_id.split('_').pop()}호기: {c.charger_type} ({c.connector_type})
-                  </p>
-                ))}
-              </div>
+          {/* [정밀 관제 로직 2.2] 실시간 충전기 현황 그리드 */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-black text-gray-900 flex items-center gap-2 px-1">
+              <Activity size={16} className="text-blue-500" /> 실시간 충전기 현황
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {station.chargers.map((c) => {
+                const config = statusConfig[c.status as StationStatus] || statusConfig['Faulty'];
+                const StatusIcon = config.icon;
+                
+                return (
+                  <div key={c.charger_id} className={`p-4 rounded-[24px] border transition-all ${config.bg} ${c.status === 'Available' ? 'border-green-100 shadow-sm' : 'border-transparent opacity-80'}`}>
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter mb-0.5">CHARGER ID</span>
+                        <span className="text-xs font-black text-gray-900">{c.charger_id.split('_').pop()}호기</span>
+                      </div>
+                      <div className={`${config.color} ${config.anim}`}>
+                        <StatusIcon size={20} />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-gray-500">{c.charger_type} • {getConnectorName(c.connector_type)}</p>
+                      <p className={`text-xs font-black ${config.color}`}>{config.label}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -175,7 +174,7 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
             </div>
           </div>
 
-          {/* [신규] 커뮤니티 리뷰 섹션 */}
+          {/* 커뮤니티 리뷰 섹션 */}
           <div className="space-y-4">
             <h3 className="text-sm font-black text-gray-900 flex items-center gap-2 px-1">
               <MessageSquare size={16} className="text-blue-500" /> 커뮤니티 리뷰 ({sortedReviews.length})
@@ -212,8 +211,15 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
             </div>
           </div>
 
-          {/* Buttons: 3단 레이아웃으로 개선 */}
+          {/* Buttons */}
           <div className="flex gap-2 pt-2">
+            <button 
+              onClick={onShowOnMap}
+              className="flex-1 bg-blue-50 border-2 border-blue-100 text-blue-600 py-4 rounded-2xl text-[11px] font-black flex flex-col items-center justify-center gap-1 hover:bg-blue-100 transition-all"
+            >
+              <MapPin size={16} /> 위치확인
+            </button>
+
             <button 
               onClick={() => {
                 if ((window as any).openReportModal) {
@@ -223,17 +229,6 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
               className="flex-1 bg-white border-2 border-red-100 text-red-500 py-4 rounded-2xl text-[11px] font-black flex flex-col items-center justify-center gap-1 hover:bg-red-50 transition-all"
             >
               <ShieldAlert size={16} /> 제보
-            </button>
-            
-            <button 
-              onClick={onShowOnMap}
-              className="flex-1 bg-blue-50 border-2 border-blue-100 text-blue-600 py-4 rounded-2xl text-[11px] font-black flex flex-col items-center justify-center gap-1 hover:bg-blue-100 transition-all"
-            >
-              <MapPin size={16} /> 위치확인
-            </button>
-
-            <button onClick={onStartCharging} disabled={availableSlots === 0} className={`flex-[2] py-4 rounded-2xl text-sm font-black flex items-center justify-center gap-2 transition-all ${availableSlots > 0 ? 'bg-blue-600 text-white shadow-xl shadow-blue-100 hover:bg-blue-700' : 'bg-gray-200 text-gray-400'}`}>
-              <Zap size={18} fill="currentColor" /> {buttonText}
             </button>
           </div>
         </div>

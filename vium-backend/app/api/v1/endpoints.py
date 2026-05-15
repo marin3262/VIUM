@@ -7,8 +7,9 @@ import uuid
 from ...db.session import get_db
 from ...models import models
 from ...schemas import schemas
-from ...db.redis_client import get_station_slots, update_station_slots
+from ...db.redis_client import get_station_slots, update_station_slots, get_station_battery
 from ...utils.image_handler import save_compressed_image
+from ...utils.redis_sync import update_redis_slots
 from ..deps import get_current_user, get_current_admin_user
 
 router = APIRouter()
@@ -16,9 +17,22 @@ router = APIRouter()
 @router.get("/stations", response_model=List[schemas.Station])
 def read_stations(db: Session = Depends(get_db)):
     """전체 충전소 목록을 조회합니다."""
-    # 중요: 여기서 station.reviews를 직접 필터링하여 재할당하면 DB 삭제가 트리거될 수 있음.
-    # 대신 쿼리 시점에 필터링하거나, 스키마 변환 시점에 처리해야 함.
-    return db.query(models.Station).all()
+    stations = db.query(models.Station).all()
+    
+    # 보안 및 무결성: 숨겨진(HIDDEN) 리뷰는 일반 사용자에게 노출하지 않습니다.
+    # Pydantic 모델로 변환 후 필터링하여 DB 세션에 영향을 주지 않도록 처리합니다.
+    results = []
+    for s in stations:
+        # Pydantic v2 표준 변환 함수인 model_validate를 사용합니다.
+        station_dto = schemas.Station.model_validate(s)
+        station_dto.reviews = [r for r in station_dto.reviews if r.status == "VISIBLE"]
+        
+        # Redis에서 실시간 배터리 정보 가져오기
+        station_dto.current_battery = get_station_battery(s.station_id)
+        
+        results.append(station_dto)
+        
+    return results
 
 @router.get("/users/me", response_model=schemas.UserProfile)
 def read_user_me(current_user: models.User = Depends(get_current_user)):
@@ -188,6 +202,8 @@ def update_report_status(
         charger = db.query(models.Charger).filter(models.Charger.charger_id == report.charger_id).first()
         if charger:
             charger.status = "Faulty"
+            # Redis 동기화 (충전기 상태가 수동으로 변경되었으므로 잔여석 정보 업데이트)
+            update_redis_slots(charger.station_id, db)
             
     elif update_in.status == "REJECTED" and user:
         user.trust_score -= 5
@@ -198,18 +214,22 @@ def update_report_status(
 @router.patch("/chargers/{charger_id}/status", response_model=schemas.ActionResponse)
 def update_charger_status(
     charger_id: str,
-    status: str,
+    update_in: schemas.ChargerStatusUpdate,
     db: Session = Depends(get_db),
     admin: models.User = Depends(get_current_admin_user)
 ):
-    """관리자용: 충전기 상태 강제 변경"""
+    """관리자용: 충전기 상태 강제 변경 (JSON Body 수신)"""
     charger = db.query(models.Charger).filter(models.Charger.charger_id == charger_id).first()
     if not charger:
         raise HTTPException(status_code=404, detail="Charger not found")
 
-    charger.status = status
+    charger.status = update_in.status
     db.commit()
-    return {"success": True, "message": f"충전기 {charger_id} 상태가 {status}로 변경되었습니다."}
+    
+    # Redis 동기화: 점검 완료 등으로 상태가 변하면 실시간 잔여석 통계를 다시 계산합니다.
+    update_redis_slots(charger.station_id, db)
+    
+    return {"success": True, "message": f"충전기 {charger_id} 상태가 {update_in.status}로 변경되었습니다."}
 
 @router.post("/stations/{station_id}/complete-charging", response_model=schemas.RewardResponse)
 def complete_charging(

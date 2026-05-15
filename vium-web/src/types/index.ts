@@ -1,5 +1,6 @@
-export type StationStatus = 'Available' | 'Charging' | 'Faulty';
+export type StationStatus = 'Available' | 'Occupied' | 'Charging' | 'Faulty';
 export type ChargerType = '급속' | '완속' | '초급속';
+export type ConnectorFilterId = 'All' | 'DC Combo' | 'Chademo' | 'AC 5핀' | 'Slow';
 
 export interface Review {
   id: number;
@@ -8,7 +9,7 @@ export interface Review {
   user_name: string;
   rating: number;
   content: string;
-  status?: 'VISIBLE' | 'HIDDEN'; // 신규: 관리자 제어용 상태
+  status?: 'VISIBLE' | 'HIDDEN';
   created_at: string;
 }
 
@@ -33,6 +34,7 @@ export interface ChargingStation {
   chargers: Charger[];
   reviews: Review[];
   distance?: string;
+  current_battery?: number;
 }
 
 export interface MileageLog {
@@ -48,6 +50,6 @@ export interface UserProfile {
   nickname: string;
   mileage_balance: number;
   level: string;
-  trust_score?: number; // 신규: 신뢰도 점수
+  trust_score?: number;
   mileage_logs: MileageLog[];
 }

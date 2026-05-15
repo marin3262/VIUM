@@ -7,13 +7,14 @@ interface ChargingFlowModalProps {
   station: ChargingStation | null;
   onClose: () => void;
   onComplete: (amount: number) => void;
+  initialStep?: FlowStep;
 }
 
-type FlowStep = 'SAFETY' | 'PLEDGE' | 'CHARGING' | 'WAITING_EXIT' | 'SUCCESS';
+type FlowStep = 'CONNECTION_PROMPT' | 'SAFETY' | 'PLEDGE' | 'CHARGING' | 'WAITING_EXIT' | 'SUCCESS';
 
-export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, onClose, onComplete }) => {
+export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, onClose, onComplete, initialStep = 'CONNECTION_PROMPT' }) => {
   const { addNotification } = useNotificationStore();
-  const [step, setStep] = useState<FlowStep>('SAFETY');
+  const [step, setStep] = useState<FlowStep>(initialStep);
   
   // 안전 점검 세분화 상태
   const [safetyStep, setSafetyStep] = useState(0); 
@@ -26,9 +27,37 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
   const [currentSoc, setCurrentSoc] = useState(30);
   const [targetSoc, setTargetSoc] = useState(80);
   const [progress, setProgress] = useState(30);
-  const [exitTimer, setExitTimer] = useState(300);
+  const [exitTimer, setExitTimer] = useState(600); // 10분 타이머 (600초)
+  const [isHwSynced, setIsHwSynced] = useState(false);
+  const [isConnectorDisconnected, setIsConnectorDisconnected] = useState(false);
   
   const isCompletedRef = useRef(false);
+  const targetChargerIdRef = useRef<string | null>(null);
+
+  // 실시간 하드웨어 배터리 잔량 동기화
+  useEffect(() => {
+    if (station?.current_battery !== undefined && station.current_battery !== null) {
+      const hwBattery = Math.floor(station.current_battery);
+      setCurrentSoc(hwBattery);
+      setProgress(hwBattery);
+      setIsHwSynced(true);
+      
+      // 만약 목표 충전량이 현재 배터리보다 낮다면 자동으로 조정
+      if (targetSoc <= hwBattery) {
+        setTargetSoc(Math.min(100, hwBattery + 10));
+      }
+    }
+  }, [station?.current_battery]);
+
+  // 목표 충전기 ID 획득 (모달 진입 시점의 충전기 추적)
+  useEffect(() => {
+    if (station && !targetChargerIdRef.current) {
+      const active = station.chargers.find(c => c.status === 'Charging' || c.status === 'Occupied');
+      if (active) {
+        targetChargerIdRef.current = active.charger_id;
+      }
+    }
+  }, [station]);
 
   // 단계별 이탈 방어 로직 (Smart Exit)
   const attemptClose = () => {
@@ -100,10 +129,30 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
   const deltaSoc = targetSoc - currentSoc;
   const reward = (() => {
     const base = 300;
-    if (deltaSoc < 20) return { total: base, bonus: 0, type: 'MIN', label: '기본 보상', desc: '최소 20% 이상 충전 시 보너스가 지급됩니다.' };
-    if (targetSoc === 100) return { total: base, bonus: 0, type: 'FULL', label: '완충 모드', desc: '🔋 100% 완충 완료! 장거리 주행을 응원합니다.' };
-    if (targetSoc === 80) return { total: base + 500, bonus: 500, type: 'ECO', label: '최고 보상', desc: '🌱 80% 에코 서약 보너스 적립 완료!' };
-    return { total: base + 200, bonus: 200, type: 'EFF', label: '효율 보상', desc: '✨ 조기 출차 효율 보너스 적립 완료!' };
+    let total = base;
+    let bonus = 0;
+    let type = 'MIN';
+    let label = '기본 보상';
+    let desc = '최소 20% 이상 충전 시 보너스가 지급됩니다.';
+
+    if (deltaSoc < 20) {
+      // 기본값 유지
+    } else if (targetSoc === 100) {
+      type = 'FULL'; label = '완충 모드'; desc = '🔋 100% 완충 완료! 장거리 주행을 응원합니다.';
+    } else if (targetSoc === 80) {
+      total = base + 500; bonus = 500; type = 'ECO'; label = '최고 보상'; desc = '🌱 80% 에코 서약 보너스 적립 완료!';
+    } else {
+      total = base + 200; bonus = 200; type = 'EFF'; label = '효율 보상'; desc = '✨ 조기 출차 효율 보너스 적립 완료!';
+    }
+
+    // 매너 출차 보너스 추가 (10분 이내 성공적 출차 시)
+    if (step === 'SUCCESS' && exitTimer > 0) {
+      total += 500;
+      bonus += 500;
+      desc += ' (매너 출차 보너스 500P 추가 지급!)';
+    }
+
+    return { total, bonus, type, label, desc };
   })();
 
   useEffect(() => {
@@ -137,7 +186,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
       role: 'USER',
       type: 'SUCCESS',
       title: '목표 충전 도달 🔋',
-      message: `${targetSoc}% 충전이 완료되었습니다. 5분 내 출차 시 보너스가 확정됩니다.`
+      message: `${targetSoc}% 충전이 완료되었습니다. 10분 내 출차 시 보너스가 지급됩니다.`
     });
 
     addNotification({
@@ -152,27 +201,50 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
-    let hwTimeout: ReturnType<typeof setTimeout>;
     if (step === 'WAITING_EXIT') {
       interval = setInterval(() => setExitTimer(prev => (prev > 0 ? prev - 1 : 0)), 1000);
-      hwTimeout = setTimeout(() => {
-        addNotification({
-          role: 'USER',
-          type: 'SUCCESS',
-          title: '출차 확인 성공 ✅',
-          message: '차량 이탈이 정상 감지되었습니다. 보너스가 지급됩니다.'
-        });
-        addNotification({
-          role: 'ADMIN',
-          type: 'SUCCESS',
-          title: '공간 비워짐 확인 🚗💨',
-          message: `${station?.station_name}의 차량 이탈을 확인했습니다. 유령 데이터가 갱신됩니다.`
-        });
-        setStep('SUCCESS');
-      }, 5000);
+      
+      // 하드웨어 실시간 신호 감지 로직 (Polling 연동)
+      if (station && targetChargerIdRef.current) {
+        const targetCharger = station.chargers.find(c => c.charger_id === targetChargerIdRef.current);
+        if (targetCharger) {
+          // 1. 차량 퇴거 감지 (Available 상태로 전이 시)
+          if (targetCharger.status === 'Available') {
+            addNotification({
+              role: 'USER',
+              type: 'SUCCESS',
+              title: '출차 확인 성공 ✅',
+              message: '차량 이탈이 정상 감지되었습니다. 이용해주셔서 감사합니다.'
+            });
+            addNotification({
+              role: 'ADMIN',
+              type: 'SUCCESS',
+              title: '공간 비워짐 확인 🚗💨',
+              message: `${station.station_name}의 차량 이탈을 확인했습니다. 유령 데이터가 갱신됩니다.`
+            });
+            setStep('SUCCESS');
+          } 
+          // 2. 커넥터 해제 감지 (Charging -> Occupied 상태로 전이 시)
+          else if (targetCharger.status === 'Occupied' && !isConnectorDisconnected) {
+            setIsConnectorDisconnected(true);
+            addNotification({
+              role: 'USER',
+              type: 'INFO',
+              title: '커넥터 분리 확인 🔌',
+              message: '커넥터가 분리되었습니다. 제자리에 돌려주시고 출차해 주세요.'
+            });
+            addNotification({
+              role: 'ADMIN',
+              type: 'INFO',
+              title: '커넥터 해제 감지 🔌',
+              message: `${station.station_name} 사용자가 커넥터를 분리했습니다.`
+            });
+          }
+        }
+      }
     }
-    return () => { if (interval) clearInterval(interval); if (hwTimeout) clearTimeout(hwTimeout); };
-  }, [step]);
+    return () => { if (interval) clearInterval(interval); };
+  }, [step, station, isConnectorDisconnected, addNotification]);
 
   if (!station) return null;
 
@@ -212,6 +284,40 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
             <X size={18} />
           </button>
         </div>
+
+        {step === 'CONNECTION_PROMPT' && (
+          <div className="p-8 pt-4 flex flex-col items-center justify-center space-y-6 animate-in slide-in-from-bottom-5 duration-500">
+            <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center animate-pulse">
+              <Cable className="text-blue-600" size={48} />
+            </div>
+            <div className="text-center space-y-2">
+              <h3 className="text-2xl font-black text-gray-900 leading-tight">충전기 연결 감지</h3>
+              <p className="text-sm text-gray-500 font-medium break-keep">
+                차량과 충전기가 성공적으로 연결되었습니다.<br />충전을 시작하시겠습니까?
+              </p>
+            </div>
+            {station?.current_battery !== undefined && station.current_battery !== null && (
+              <div className="w-full bg-blue-50/50 px-6 py-4 rounded-2xl border border-blue-100 flex items-center justify-center gap-3">
+                <BatteryFull className="text-blue-500" size={24} />
+                <span className="text-base font-black text-blue-700">현재 배터리: {Math.floor(station.current_battery)}%</span>
+              </div>
+            )}
+            <div className="w-full flex gap-3 pt-4">
+              <button 
+                onClick={attemptClose} 
+                className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 text-gray-500 rounded-2xl font-black transition-colors"
+              >
+                취소
+              </button>
+              <button 
+                onClick={() => setStep('SAFETY')} 
+                className="flex-[2] py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black shadow-lg shadow-blue-200 transition-all active:scale-95"
+              >
+                충전 진행하기
+              </button>
+            </div>
+          </div>
+        )}
 
         {step === 'SAFETY' && (
           <div className="p-8 pt-4 space-y-8 animate-in slide-in-from-bottom-5 duration-500">
@@ -305,10 +411,36 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
 
         {step === 'WAITING_EXIT' && (
           <div className="p-10 pt-4 flex flex-col items-center text-center space-y-8 animate-in fade-in zoom-in duration-500">
-            <div className="relative"><div className="bg-blue-50 w-32 h-32 rounded-full flex items-center justify-center text-blue-600 relative z-10"><Car size={64} className="animate-bounce" /></div><div className="absolute inset-0 bg-blue-400 rounded-full animate-ping opacity-20"></div></div>
-            <h3 className="text-2xl font-black text-gray-900 mb-2 italic uppercase">Waiting for Exit...</h3>
-            <p className="text-sm text-gray-400 leading-relaxed"><span className="text-blue-600 font-bold">{formatTime(exitTimer)}</span> 이내에 이동해야 보너스가 지급됩니다.</p>
-            <div className="w-full bg-blue-50 p-5 rounded-3xl flex items-center gap-4 font-black text-blue-900 uppercase text-xs tracking-tighter"><Loader2 className="animate-spin" size={20} /> H/W SENSOR LIVE MONITORING</div>
+            <div className="relative">
+              <div className={`w-32 h-32 rounded-full flex items-center justify-center relative z-10 ${isConnectorDisconnected ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                {isConnectorDisconnected ? <Car size={64} className="animate-bounce" /> : <Plug2 size={64} className="animate-pulse" />}
+              </div>
+              <div className={`absolute inset-0 rounded-full animate-ping opacity-20 ${isConnectorDisconnected ? 'bg-green-400' : 'bg-blue-400'}`}></div>
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="text-2xl font-black text-gray-900 italic uppercase">
+                {isConnectorDisconnected ? 'Waiting for Exit...' : 'Disconnect Connector'}
+              </h3>
+              {isConnectorDisconnected ? (
+                <p className="text-sm text-green-600 font-bold leading-relaxed bg-green-50 px-4 py-2 rounded-xl">
+                  커넥터가 안전하게 분리되었습니다!<br/>제자리에 돌려주시고 출차해 주세요.
+                </p>
+              ) : (
+                <p className="text-sm text-gray-400 leading-relaxed">
+                  차량에서 <strong className="text-blue-600">커넥터를 분리</strong>해 주세요.
+                </p>
+              )}
+            </div>
+
+            <p className="text-sm text-gray-400 leading-relaxed">
+              <span className="text-blue-600 font-bold">{formatTime(exitTimer)}</span> 이내에 출차 시 보너스가 지급됩니다.
+            </p>
+            
+            <div className="w-full bg-gray-50 p-5 rounded-3xl flex items-center justify-center gap-3 font-black text-gray-400 uppercase text-xs tracking-tighter border border-gray-100">
+              <Loader2 className="animate-spin text-blue-500" size={18} /> 
+              H/W SENSOR LIVE MONITORING
+            </div>
           </div>
         )}
 

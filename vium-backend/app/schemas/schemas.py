@@ -30,6 +30,9 @@ class ChargerBase(BaseModel):
     connector_type: str
     status: str
 
+class ChargerStatusUpdate(BaseModel):
+    status: str # 'Available' | 'Faulty' | 'Occupied' | 'Charging'
+
 class Charger(ChargerBase):
     class Config:
         from_attributes = True
@@ -46,6 +49,7 @@ class StationBase(BaseModel):
     priceHistory: List[int] = Field(default_factory=lambda: [300]*24)
     lastSuccessTime: str = "정보 없음"
     distance: Optional[str] = "-"
+    current_battery: Optional[float] = None
 
 class Station(StationBase):
     chargers: List[Charger] = []
@@ -131,6 +135,8 @@ class ConnectorSignal(BaseModel):
     """아두이노(ESP32)로부터 수신하는 충전 커넥터 상태 데이터"""
     charger_id: str
     status: str # 'CONNECTED' | 'DISCONNECTED'
+    voltage: Optional[float] = 0.0
+    battery: Optional[float] = 0.0
     timestamp: Optional[datetime] = Field(default_factory=datetime.utcnow)
 
 class CameraSignal(BaseModel):

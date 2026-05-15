@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { ChargingStation, ChargerType, Review } from '../types';
+import type { ChargingStation, ChargerType } from '../types';
 import { stationService } from '../services/stationService';
+import { FILTER_CONNECTOR_MAP } from '../types/constants';
 
 interface StationState {
   stations: ChargingStation[];
@@ -66,8 +67,16 @@ export const useStationStore = create<StationState>((set, get) => ({
       const filtered = stations.filter((station) => {
         if (!station || !Array.isArray(station.chargers)) return false;
 
+        // 1.1 충전 속도 필터 (급속/완속)
         const typeMatch = activeFilter === 'All' || station.chargers.some(c => c?.charger_type === activeFilter);
-        const connectorMatch = selectedConnector === 'All' || station.chargers.some(c => (c?.connector_type || '').includes(selectedConnector));
+        
+        // 1.2 [고도화] 커넥터 타입 필터 (매핑 테이블 기반 코드 매칭)
+        const connectorMatch = selectedConnector === 'All' || station.chargers.some(c => {
+          const allowedCodes = FILTER_CONNECTOR_MAP[selectedConnector] || [];
+          return allowedCodes.includes(c?.connector_type || '');
+        });
+
+        // 1.3 이용 가능 여부 필터
         const availableCount = station.chargers.filter(c => c?.status === 'Available').length;
         const availableMatch = !onlyAvailable || availableCount > 0;
 
@@ -75,6 +84,7 @@ export const useStationStore = create<StationState>((set, get) => ({
 
         if (normalizedQuery === '') return true;
 
+        // 1.4 검색어 매칭
         const nameMatch = station.station_name?.toLowerCase().includes(normalizedQuery);
         const addressMatch = station.address?.toLowerCase().includes(normalizedQuery);
 

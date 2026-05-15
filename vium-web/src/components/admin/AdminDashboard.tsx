@@ -83,9 +83,22 @@ export const AdminDashboard: React.FC = () => {
           message: `${chargerId}번 충전기가 정상 가동 상태로 변경되었습니다.`
         });
         await loadAdminData();
+      } else {
+        addNotification({
+          role: 'ADMIN',
+          type: 'ERROR',
+          title: '상태 변경 실패 ❌',
+          message: response.error || '서버 응답 오류가 발생했습니다.'
+        });
       }
     } catch (error) {
       console.error('수리 완료 처리 중 오류:', error);
+      addNotification({
+        role: 'ADMIN',
+        type: 'ERROR',
+        title: '시스템 오류 ⚠️',
+        message: '통신 중 예상치 못한 오류가 발생했습니다.'
+      });
     } finally {
       setProcessingId(null);
     }

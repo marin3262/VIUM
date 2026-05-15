@@ -1,254 +1,316 @@
-import { useEffect, useRef, useState } from 'react';
-import type { ChargingStation } from '../../types';
-
-declare global {
-  interface Window {
-    kakao: any;
-    openStationDetail?: (stationId: string) => void;
-    openReportModal?: (stationId: string) => void;
-    closeStationOverlay?: () => void;
-    focusStationOnMap?: (stationId: string) => void;
-  }
-}
+import { useEffect, useRef, useState, useCallback } from "react";
+import { useStationStore } from "../../store/stationStore";
+import type { ChargingStation } from "../../types";
 
 interface StationMapProps {
   stations: ChargingStation[];
   onMarkerClick: (station: ChargingStation) => void;
+  onMapClick?: () => void;
   isLoading: boolean;
 }
 
-export function StationMap({ stations = [], onMarkerClick, isLoading }: StationMapProps) {
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const kakaoMapRef = useRef<any>(null);
-  const clustererRef = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
-  const customOverlayRef = useRef<any>(null);
-  const [isSdkReady, setIsSdkReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  
-  const isInitialLoadRef = useRef(true);
+declare global {
+  interface Window {
+    kakao: any;
+    focusStationOnMap: (stationId: string) => void;
+  }
+}
 
-  // 1. 카카오 SDK 로드 및 전역 바인딩 (안정적인 ID 기반 통신)
+interface MarkerState {
+  marker: any;
+  uri: string;
+}
+
+export function StationMap({ stations, onMarkerClick, onMapClick, isLoading }: StationMapProps) {
+  const container = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<any>(null);
+  const clustererInstance = useRef<any>(null);
+  const markersRef = useRef<Map<string, MarkerState>>(new Map());
+  const [isReady, setIsReady] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [isUserDragging, setIsUserDragging] = useState(false); // 드래그 중 업데이트 방지
+  const { getAvailableSlots } = useStationStore();
+
+  // 1. 카카오 지도 API 로드 대기
   useEffect(() => {
-    window.closeStationOverlay = () => {
-      if (customOverlayRef.current) {
-        customOverlayRef.current.setMap(null);
-      }
+    const initMap = () => {
+      window.kakao.maps.load(() => {
+        setIsReady(true);
+      });
     };
 
-    let checkInterval: any;
-    let isLoaded = false;
-
-    const initializeKakao = () => {
-      if (window.kakao && window.kakao.maps) {
-        try {
-          window.kakao.maps.load(() => {
-            if (!isLoaded) {
-              setIsSdkReady(true);
-              isLoaded = true;
-            }
-          });
-          return true;
-        } catch (e) {
-          setError("SDK 로딩 중 내부 오류가 발생했습니다.");
-          return false;
+    if (window.kakao && window.kakao.maps) {
+      if (window.kakao.maps.Map) {
+        setIsReady(true);
+      } else {
+        initMap();
+      }
+    } else {
+      const check = setInterval(() => {
+        if (window.kakao && window.kakao.maps) {
+          initMap();
+          clearInterval(check);
         }
-      }
-      return false;
-    };
-
-    if (!initializeKakao()) {
-      checkInterval = setInterval(() => {
-        if (initializeKakao()) clearInterval(checkInterval);
-      }, 500);
+      }, 300);
+      return () => clearInterval(check);
     }
-
-    return () => {
-      if (checkInterval) clearInterval(checkInterval);
-      delete window.closeStationOverlay;
-    };
   }, []);
 
-  // 2. 지도 초기화
-  useEffect(() => {
-    if (!isSdkReady || !mapContainerRef.current || kakaoMapRef.current) return;
+  // 2. 동적 SVG 마커 이미지 생성 함수
+  const createSvgMarkerUri = useCallback((available: number, total: number, chargers: any[]) => {
+    let color = '#2563eb';
+    if (available === 0) {
+      const isAllFaulty = chargers.length > 0 && chargers.every(c => c.status === 'Faulty');
+      if (isAllFaulty) color = '#ef4444';
+      else color = '#f97316';
+    }
 
-    try {
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="46" height="46" viewBox="0 0 46 46">
+        <circle cx="23" cy="23" r="19" fill="rgba(0,0,0,0.1)"/>
+        <circle cx="23" cy="23" r="18" fill="white" stroke="rgba(0,0,0,0.05)" stroke-width="1"/>
+        <circle cx="23" cy="23" r="15" fill="${color}"/>
+        <text x="23" y="27" font-family="Pretendard, sans-serif" font-weight="900" font-size="12" fill="white" text-anchor="middle">
+          ${available}<tspan font-size="8" font-weight="400" opacity="0.7">/${total}</tspan>
+        </text>
+      </svg>
+    `.trim();
+
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }, []);
+
+  // 3. 지도 및 클러스터러 초기화
+  useEffect(() => {
+    if (!isReady || !container.current) return;
+
+    if (!mapInstance.current) {
       const options = {
         center: new window.kakao.maps.LatLng(37.7853, 127.0457),
         level: 8,
+        draggable: true,
+        scrollwheel: true,
       };
-      
-      const map = new window.kakao.maps.Map(mapContainerRef.current, options);
-      const zoomControl = new window.kakao.maps.ZoomControl();
-      map.addControl(zoomControl, window.kakao.maps.ControlPosition.RIGHT);
-      
+      const map = new window.kakao.maps.Map(container.current, options);
+      mapInstance.current = map;
+
+      // 상호작용 감지
+      window.kakao.maps.event.addListener(map, 'dragstart', () => setIsUserDragging(true));
+      window.kakao.maps.event.addListener(map, 'dragend', () => setIsUserDragging(false));
       window.kakao.maps.event.addListener(map, 'click', () => {
-        if (customOverlayRef.current) {
-          customOverlayRef.current.setMap(null);
-        }
+        if (onMapClick) onMapClick();
       });
 
       const clusterer = new window.kakao.maps.MarkerClusterer({
         map: map,
         averageCenter: true,
-        minLevel: 6,
+        minLevel: 2, // 아주 낮은 레벨까지 클러스터링 유지
         styles: [{
           width: '52px', height: '52px',
-          background: 'rgba(59, 130, 246, 0.85)',
-          borderRadius: '50%',
+          background: 'rgba(37, 99, 235, 0.9)',
           color: '#fff',
           textAlign: 'center',
-          fontWeight: '900',
           lineHeight: '52px',
-          fontSize: '12px',
-          boxShadow: '0 8px 24px rgba(59, 130, 246, 0.3)',
-          border: '2px solid rgba(255, 255, 255, 0.8)'
+          borderRadius: '26px',
+          fontWeight: '900',
+          fontSize: '14px',
+          boxShadow: '0 8px 16px rgba(0,0,0,0.2)',
+          border: '2px solid white',
+          backdropFilter: 'blur(4px)'
         }]
       });
+      clustererInstance.current = clusterer;
 
-      kakaoMapRef.current = map;
-      clustererRef.current = clusterer;
-      
-      customOverlayRef.current = new window.kakao.maps.CustomOverlay({
-        clickable: true,
-        yAnchor: 1.15,
-        zIndex: 1000 
-      });
-
-      const resizeObserver = new ResizeObserver(() => {
-        if (kakaoMapRef.current) {
-          const center = kakaoMapRef.current.getCenter();
-          kakaoMapRef.current.relayout();
-          requestAnimationFrame(() => {
-            kakaoMapRef.current.setCenter(center);
-          });
+      window.focusStationOnMap = (stationId: string) => {
+        const target = useStationStore.getState().stations.find(s => s.station_id === stationId);
+        if (target && mapInstance.current) {
+          const lat = Number(target.latitude);
+          const lng = Number(target.longitude);
+          if (!isNaN(lat) && !isNaN(lng)) {
+            const pos = new window.kakao.maps.LatLng(lat, lng);
+            mapInstance.current.setCenter(pos);
+            mapInstance.current.setLevel(3);
+          }
         }
-      });
-      resizeObserver.observe(mapContainerRef.current);
-
-      return () => resizeObserver.disconnect();
-    } catch (err) {
-      setError("지도를 생성할 수 없습니다.");
-    }
-  }, [isSdkReady]);
-
-  // 3. 마커 업데이트 및 상호작용
-  useEffect(() => {
-    if (!kakaoMapRef.current || !clustererRef.current || !isSdkReady) return;
-
-    const map = kakaoMapRef.current;
-    const clusterer = clustererRef.current;
-
-    clusterer.clear();
-    markersRef.current.forEach(m => m.setMap(null));
-    markersRef.current = [];
-
-    const bounds = new window.kakao.maps.LatLngBounds();
-    const newMarkers: any[] = [];
-
-    stations.forEach(station => {
-      if (!station.latitude || !station.longitude) return;
-
-      const position = new window.kakao.maps.LatLng(station.latitude, station.longitude);
-      bounds.extend(position);
-
-      const availableCount = station.chargers?.filter(c => c.status === 'Available').length || 0;
-      const markerColor = availableCount > 0 ? '#3B82F6' : '#EF4444';
-
-      const marker = new window.kakao.maps.Marker({
-        position,
-        title: station.station_name,
-      });
-
-      const handleMarkerClick = () => {
-        map.panTo(position);
-        
-        const content = document.createElement('div');
-        content.innerHTML = `
-          <div style="
-            background: rgba(255, 255, 255, 0.85); 
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border-radius: 28px; 
-            width: 240px; 
-            overflow: hidden; 
-            border: 1px solid rgba(255, 255, 255, 0.3); 
-            position: relative; 
-            box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.25);
-          ">
-            <div onclick="window.closeStationOverlay()" style="position:absolute; top:16px; right:16px; width:24px; height:24px; border-radius:50%; background:rgba(255,255,255,0.5); display:flex; align-items:center; justify-content:center; cursor:pointer; color:#475569; border:1px solid rgba(255,255,255,0.5); z-index:10;">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            </div>
-
-            <div style="padding: 24px;">
-              <div style="margin-bottom:12px; padding-right:24px;">
-                <div style="font-size:9px; font-weight:900; color:#64748B; margin-bottom:2px; letter-spacing:0.1em;">STATION MONITORING</div>
-                <div style="font-size:17px; font-weight:900; color:#0F172A; line-height:1.2;">${station.station_name}</div>
-              </div>
-              
-              <div style="display:flex; align-items:center; gap:8px; margin-bottom:20px; background:rgba(255,255,255,0.4); padding:10px 14px; border-radius:14px; border: 1px solid rgba(255,255,255,0.5);">
-                <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:${markerColor};"></span>
-                <span style="font-size:12px; font-weight:800; color:${markerColor};">잔여 ${availableCount}석 이용가능</span>
-              </div>
-              
-              <div style="display:flex; gap:8px;">
-                <button onclick="window.openStationDetail('${station.station_id}')" style="flex:1.5; padding:14px; background-color:#1E293B; border:none; border-radius:16px; font-size:12px; font-weight:900; color:#FFFFFF; cursor:pointer; transition: all 0.2s; box-shadow: 0 8px 16px rgba(0,0,0,0.1);">
-                  상세 정보
-                </button>
-                <button onclick="window.openReportModal('${station.station_id}')" style="flex:1; padding:14px; background-color:rgba(255,255,255,0.6); border:2px solid #FEE2E2; border-radius:16px; font-size:12px; font-weight:900; color:#EF4444; cursor:pointer; transition: all 0.2s;">
-                  고장 제보
-                </button>
-              </div>
-            </div>
-            
-            <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%) rotate(45deg); width: 16px; height: 16px; background: rgba(255, 255, 255, 0.85); border-right: 1px solid rgba(255, 255, 255, 0.3); border-bottom: 1px solid rgba(255, 255, 255, 0.3); z-index: -1;"></div>
-          </div>
-        `;
-        
-        customOverlayRef.current.setContent(content);
-        customOverlayRef.current.setPosition(position);
-        customOverlayRef.current.setMap(map);
       };
 
-      window.kakao.maps.event.addListener(marker, 'click', handleMarkerClick);
-      (marker as any).triggerClick = handleMarkerClick; // 외부 호출용 바인딩
+      let animationFrame: number;
+      let startTime: number;
+      
+      const syncMapSize = (timestamp: number) => {
+        if (!startTime) startTime = timestamp;
+        const progress = timestamp - startTime;
+        
+        if (mapInstance.current) {
+          mapInstance.current.relayout();
+          const center = mapInstance.current.getCenter();
+          const nudge = (progress % 2 === 0) ? 0.000001 : -0.000001;
+          mapInstance.current.setCenter(new window.kakao.maps.LatLng(center.getLat() + nudge, center.getLng()));
+        }
+        
+        if (progress < 600) {
+          animationFrame = requestAnimationFrame(syncMapSize);
+        } else {
+          startTime = 0;
+          setIsAnimating(false);
+          if (mapInstance.current) mapInstance.current.relayout();
+        }
+      };
 
-      newMarkers.push(marker);
+      const resizeObserver = new ResizeObserver(() => {
+        if (mapInstance.current) {
+          setIsAnimating(true);
+          cancelAnimationFrame(animationFrame);
+          startTime = 0;
+          animationFrame = requestAnimationFrame(syncMapSize);
+        }
+      });
+      resizeObserver.observe(container.current);
+
+      return () => {
+        resizeObserver.disconnect();
+        cancelAnimationFrame(animationFrame);
+      };
+    }
+  }, [isReady, onMapClick]);
+
+  // 4. 차분 업데이트 기반 마커 관리 (Jittering 및 타입 안전성 확보)
+  useEffect(() => {
+    if (!mapInstance.current || !clustererInstance.current || !isReady) return;
+    
+    // 드래그 중에는 업데이트 지연
+    if (isUserDragging && markersRef.current.size > 0) return;
+
+    const clusterer = clustererInstance.current;
+    const currentMarkersMap = markersRef.current;
+    const nextStationIds = new Set(stations.map(s => s.station_id));
+
+    // 4.1 필터링 제외 마커 제거
+    const markersToRemove: any[] = [];
+    for (const [id, state] of currentMarkersMap.entries()) {
+      if (!nextStationIds.has(id)) {
+        markersToRemove.push(state.marker);
+        state.marker.setMap(null); 
+        currentMarkersMap.delete(id);
+      }
+    }
+    
+    if (markersToRemove.length > 0) {
+      clusterer.removeMarkers(markersToRemove);
+    }
+
+    // 4.2 Jittering 알고리즘 적용 및 업데이트
+    const markersToAdd: any[] = [];
+    const coordCounts = new Map<string, number>();
+
+    stations.forEach(station => {
+      // [보안] 위경도 타입 안전성 체크 및 강제 변환
+      const rawLat = Number(station.latitude);
+      const rawLng = Number(station.longitude);
+      
+      if (isNaN(rawLat) || isNaN(rawLng)) {
+        console.warn(`[StationMap] Invalid coordinates for station: ${station.station_id}`);
+        return; // 유효하지 않은 좌표는 렌더링 스킵
+      }
+
+      const coordKey = `${rawLat.toFixed(6)},${rawLng.toFixed(6)}`;
+      const samePosCount = coordCounts.get(coordKey) || 0;
+      coordCounts.set(coordKey, samePosCount + 1);
+
+      let finalLat = rawLat;
+      let finalLng = rawLng;
+
+      if (samePosCount > 0) {
+        const angle = (samePosCount * 137.5) * (Math.PI / 180);
+        const radius = 0.00004 * Math.sqrt(samePosCount);
+        finalLat += radius * Math.cos(angle);
+        finalLng += radius * Math.sin(angle);
+      }
+
+      const available = getAvailableSlots(station);
+      const total = station.chargers.length;
+      const markerUri = createSvgMarkerUri(available, total, station.chargers);
+      
+      const existingState = currentMarkersMap.get(station.station_id);
+
+      if (existingState) {
+        if (existingState.uri !== markerUri) {
+          const markerImage = new window.kakao.maps.MarkerImage(
+            markerUri,
+            new window.kakao.maps.Size(46, 46),
+            { offset: new window.kakao.maps.Point(23, 23) }
+          );
+          existingState.marker.setImage(markerImage);
+          existingState.uri = markerUri;
+        }
+        
+        const newPos = new window.kakao.maps.LatLng(finalLat, finalLng);
+        if (!existingState.marker.getPosition().equals(newPos)) {
+          existingState.marker.setPosition(newPos);
+        }
+
+        if (existingState.marker.getMap() === null) {
+          markersToAdd.push(existingState.marker);
+        }
+      } else {
+        const pos = new window.kakao.maps.LatLng(finalLat, finalLng);
+        const markerImage = new window.kakao.maps.MarkerImage(
+          markerUri,
+          new window.kakao.maps.Size(46, 46),
+          { offset: new window.kakao.maps.Point(23, 23) }
+        );
+
+        const marker = new window.kakao.maps.Marker({
+          position: pos,
+          image: markerImage,
+          zIndex: 3
+        });
+
+        window.kakao.maps.event.addListener(marker, 'click', () => {
+          onMarkerClick(station);
+        });
+
+        currentMarkersMap.set(station.station_id, { marker, uri: markerUri });
+        markersToAdd.push(marker);
+      }
     });
 
-    clusterer.addMarkers(newMarkers);
-    markersRef.current = newMarkers;
-
-    if (stations.length > 0 && isInitialLoadRef.current) {
-      map.setBounds(bounds);
-      isInitialLoadRef.current = false;
+    if (markersToAdd.length > 0) {
+      clusterer.addMarkers(markersToAdd);
     }
-  }, [stations, isSdkReady]);
 
-  // 4. 외부 트리거 수신용
-  useEffect(() => {
-    window.focusStationOnMap = (stationId: string) => {
-      const targetIndex = stations.findIndex(s => s.station_id === stationId);
-      if (targetIndex >= 0 && markersRef.current[targetIndex]) {
-        const marker = markersRef.current[targetIndex];
-        if (marker.triggerClick) {
-          marker.triggerClick();
-        }
-      }
-    };
-    return () => {
-      delete window.focusStationOnMap;
-    };
-  }, [stations]);
+    if (markersToRemove.length > 0 || markersToAdd.length > 0) {
+      if (clusterer.repaint) clusterer.repaint();
+    }
+
+  }, [stations, isReady, onMarkerClick, getAvailableSlots, createSvgMarkerUri, isUserDragging]);
 
   return (
-    <div className="w-full h-full relative z-0">
-      <div ref={mapContainerRef} className="w-full h-full absolute inset-0 z-0" />
-      {!isSdkReady && !error && (
-        <div className="absolute inset-0 bg-white/95 flex flex-col items-center justify-center z-50 backdrop-blur-md">
-          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p className="text-xs font-black text-blue-600 tracking-[0.2em] uppercase">Initializing Maps...</p>
+    <div className="w-full h-full relative" style={{ minHeight: '300px' }}>
+      <div 
+        ref={container} 
+        className="w-full h-full" 
+        style={{ 
+          width: '100%', 
+          height: '100%', 
+          background: '#f8fafc',
+          willChange: 'transform',
+          transform: 'translateZ(0)' 
+        }} 
+      />
+      {!isReady && (
+        <div className="absolute inset-0 bg-gray-50 flex items-center justify-center z-10">
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-8 h-8 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Map Loading...</p>
+          </div>
+        </div>
+      )}
+      {isLoading && (
+        <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-20 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-xs font-black text-blue-600 uppercase tracking-widest">Updating Map...</p>
+          </div>
         </div>
       )}
     </div>

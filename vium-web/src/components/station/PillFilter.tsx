@@ -1,6 +1,7 @@
 import React from 'react';
 import { Search } from 'lucide-react';
 import { useStationStore } from '../../store/stationStore';
+import { ChargerType } from '../../types';
 
 export const PillFilter: React.FC = () => {
   const { 
@@ -11,12 +12,20 @@ export const PillFilter: React.FC = () => {
   } = useStationStore();
 
   const connectors = [
-    { id: 'All', label: '모든 커넥터' },
-    { id: 'DC Combo', label: 'DC 콤보' },
-    { id: 'Chademo', label: '차데모' },
-    { id: 'AC 5핀', label: 'AC 5핀 (완속)' },
-    { id: 'Slow', label: 'AC 완속' }
+    { id: 'All', label: '모든 커넥터', speed: 'All' },
+    { id: 'DC Combo', label: 'DC 콤보', speed: '급속' },
+    { id: 'Chademo', label: '차데모', speed: '급속' },
+    { id: 'AC 5핀', label: 'AC 5핀 (완속)', speed: '완속' },
+    { id: 'Slow', label: 'AC 완속', speed: '완속' }
   ];
+
+  // [설계 6.2] 상향 참조: 커넥터 선택 시 상위 속도 필터 자동 연동
+  const handleConnectorClick = (id: string, speed: string) => {
+    setSelectedConnector(id);
+    if (speed !== 'All' && activeFilter !== speed) {
+      setActiveFilter(speed as ChargerType);
+    }
+  };
 
   return (
     <div className="space-y-4 w-full">
@@ -34,38 +43,55 @@ export const PillFilter: React.FC = () => {
         />
       </div>
 
-      {/* 1. 충전 타입 필터 */}
+      {/* 1. 충전 타입 필터 (대분류) */}
       <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
         {['All', '급속', '완속'].map((type) => (
           <button
             key={type}
-            onClick={() => setActiveFilter(type as any)}
+            onClick={() => {
+              setActiveFilter(type as any);
+              // [설계 6.2] 하향 제어: 속도 변경 시 맞지 않는 커넥터 초기화
+              if (type !== 'All' && selectedConnector !== 'All') {
+                const conn = connectors.find(c => c.id === selectedConnector);
+                if (conn && conn.speed !== type && conn.speed !== 'All') {
+                  setSelectedConnector('All');
+                }
+              }
+            }}
             className={`px-5 py-2 rounded-2xl text-xs font-bold transition-all whitespace-nowrap border ${
               activeFilter === type 
                 ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100' 
                 : 'bg-white text-gray-500 border-gray-100 hover:border-blue-200'
             }`}
           >
-            {type === 'All' ? '전체' : type}
+            {type === 'All' ? '전체 속도' : type}
           </button>
         ))}
       </div>
 
-      {/* 2. 커넥터 타입 필터 */}
+      {/* 2. 커넥터 타입 필터 (소분류) */}
       <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-        {connectors.map((conn) => (
-          <button
-            key={conn.id}
-            onClick={() => setSelectedConnector(conn.id)}
-            className={`px-4 py-1.5 rounded-xl text-[11px] font-bold transition-all whitespace-nowrap border ${
-              selectedConnector === conn.id 
-                ? 'bg-gray-900 text-white border-gray-900' 
-                : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'
-            }`}
-          >
-            {conn.label}
-          </button>
-        ))}
+        {connectors.map((conn) => {
+          // [설계 6.2] 하향 제어: 상위 필터와 맞지 않는 항목 Dimmed 처리
+          const isDisabled = activeFilter !== 'All' && conn.speed !== 'All' && conn.speed !== activeFilter;
+          
+          return (
+            <button
+              key={conn.id}
+              onClick={() => handleConnectorClick(conn.id, conn.speed)}
+              disabled={isDisabled}
+              className={`px-4 py-1.5 rounded-xl text-[11px] font-bold transition-all whitespace-nowrap border ${
+                selectedConnector === conn.id 
+                  ? 'bg-gray-900 text-white border-gray-900' 
+                  : isDisabled
+                    ? 'bg-gray-50 text-gray-200 border-gray-50 cursor-not-allowed'
+                    : 'bg-white text-gray-400 border-gray-100 hover:border-gray-300'
+              }`}
+            >
+              {conn.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* 3. 이용 가능 여부 스위치 */}
