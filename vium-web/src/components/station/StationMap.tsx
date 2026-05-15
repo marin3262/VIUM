@@ -27,7 +27,7 @@ export function StationMap({ stations, onMarkerClick, onMapClick, isLoading }: S
   const clustererInstance = useRef<any>(null);
   const markersRef = useRef<Map<string, MarkerState>>(new Map());
   const [isReady, setIsReady] = useState(false);
-  const [isAnimating, setIsAnimating] = useState(false);
+  
   const [isUserDragging, setIsUserDragging] = useState(false); // 드래그 중 업데이트 방지
   const { getAvailableSlots } = useStationStore();
 
@@ -151,14 +151,14 @@ export function StationMap({ stations, onMarkerClick, onMapClick, isLoading }: S
           animationFrame = requestAnimationFrame(syncMapSize);
         } else {
           startTime = 0;
-          setIsAnimating(false);
+          
           if (mapInstance.current) mapInstance.current.relayout();
         }
       };
 
       const resizeObserver = new ResizeObserver(() => {
         if (mapInstance.current) {
-          setIsAnimating(true);
+          
           cancelAnimationFrame(animationFrame);
           startTime = 0;
           animationFrame = requestAnimationFrame(syncMapSize);

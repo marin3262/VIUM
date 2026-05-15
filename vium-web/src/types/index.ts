@@ -51,5 +51,6 @@ export interface UserProfile {
   mileage_balance: number;
   level: string;
   trust_score?: number;
+  is_admin?: boolean;
   mileage_logs: MileageLog[];
 }

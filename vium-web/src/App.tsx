@@ -188,7 +188,7 @@ function App() {
 
     const success = await useUserStore.getState().completeCharging(finishedStationId);
     if (success) {
-      triggerRewardAnimation(amount, "충전 완료 보상");
+      triggerRewardAnimation(amount);
       if (finishedStation) {
         setPendingReview(finishedStation);
       }

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Search } from 'lucide-react';
 import { useStationStore } from '../../store/stationStore';
-import { ChargerType } from '../../types';
+import type { ChargerType } from '../../types';
 
 export const PillFilter: React.FC = () => {
   const { 

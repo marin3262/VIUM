@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Mail, Lock, User, Star, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
+import { X, Mail, Lock, User, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
 import { useUserStore } from '../../store/userStore';
 
 interface AuthModalProps {

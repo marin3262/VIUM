@@ -12,7 +12,7 @@ interface UserState {
   // Actions
   fetchUser: () => Promise<void>;
   login: (credentials: FormData) => Promise<boolean>;
-  signup: (userData: any) => Promise<boolean>;
+  signup: (userData: any) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   updateUser: (user: Partial<UserProfile>) => void;
   completeCharging: (stationId: string) => Promise<boolean>;

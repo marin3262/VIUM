@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, CheckCircle2, AlertTriangle, Info, Trash2, BellOff } from 'lucide-react';
+import { X, CheckCircle2, AlertTriangle, Info, BellOff } from 'lucide-react';
 import { useNotificationStore } from '../../store/notificationStore';
 
 interface NotificationPanelProps {

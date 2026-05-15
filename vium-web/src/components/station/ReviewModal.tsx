@@ -47,7 +47,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, onClose }) =>
         ]);
 
         // 3. 보상 애니메이션 실행
-        triggerRewardAnimation(100, `리뷰 작성 보상: ${station.station_name}`);
+        triggerRewardAnimation(100);
         
         // 4. 시스템 알림
         addNotification({

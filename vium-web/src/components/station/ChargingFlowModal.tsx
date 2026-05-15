@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, Coins, BatteryFull, Info, Loader2, Car, ShieldAlert, Eye, Cable, Plug2 } from 'lucide-react';
+import { X, Zap, CheckCircle2, Coins, BatteryFull, Loader2, Car, ShieldAlert, Eye, Cable, Plug2 } from 'lucide-react';
 import type { ChargingStation } from '../../types';
 import { useNotificationStore } from '../../store/notificationStore';
 
@@ -28,7 +28,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
   const [targetSoc, setTargetSoc] = useState(80);
   const [progress, setProgress] = useState(30);
   const [exitTimer, setExitTimer] = useState(600); // 10분 타이머 (600초)
-  const [isHwSynced, setIsHwSynced] = useState(false);
   const [isConnectorDisconnected, setIsConnectorDisconnected] = useState(false);
   
   const isCompletedRef = useRef(false);
@@ -40,14 +39,13 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
       const hwBattery = Math.floor(station.current_battery);
       setCurrentSoc(hwBattery);
       setProgress(hwBattery);
-      setIsHwSynced(true);
       
       // 만약 목표 충전량이 현재 배터리보다 낮다면 자동으로 조정
       if (targetSoc <= hwBattery) {
         setTargetSoc(Math.min(100, hwBattery + 10));
       }
     }
-  }, [station?.current_battery]);
+  }, [station?.current_battery, targetSoc]);
 
   // 목표 충전기 ID 획득 (모달 진입 시점의 충전기 추적)
   useEffect(() => {
@@ -155,6 +153,26 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
     return { total, bonus, type, label, desc };
   })();
 
+  const handleChargingComplete = () => {
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) navigator.vibrate([500, 200, 500]);
+    
+    addNotification({
+      role: 'USER',
+      type: 'SUCCESS',
+      title: '목표 충전 도달 🔋',
+      message: `${targetSoc}% 충전이 완료되었습니다. 10분 내 출차 시 보너스가 지급됩니다.`
+    });
+
+    addNotification({
+      role: 'ADMIN',
+      type: 'INFO',
+      title: '충전 완료 감지 📡',
+      message: `${station?.station_name}의 충전이 끝났습니다. 차량 이탈 감지 모드로 전환합니다.`
+    });
+    
+    setStep('WAITING_EXIT');
+  };
+
   useEffect(() => {
     let timer: ReturnType<typeof setInterval>;
     if (step === 'CHARGING' && station) {
@@ -178,26 +196,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
       handleChargingComplete();
     }
   }, [progress, targetSoc, step]);
-
-  const handleChargingComplete = () => {
-    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) navigator.vibrate([500, 200, 500]);
-    
-    addNotification({
-      role: 'USER',
-      type: 'SUCCESS',
-      title: '목표 충전 도달 🔋',
-      message: `${targetSoc}% 충전이 완료되었습니다. 10분 내 출차 시 보너스가 지급됩니다.`
-    });
-
-    addNotification({
-      role: 'ADMIN',
-      type: 'INFO',
-      title: '충전 완료 감지 📡',
-      message: `${station?.station_name}의 충전이 끝났습니다. 차량 이탈 감지 모드로 전환합니다.`
-    });
-    
-    setStep('WAITING_EXIT');
-  };
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;

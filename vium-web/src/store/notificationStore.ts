@@ -3,7 +3,7 @@ import { create } from 'zustand';
 export interface ViumNotification {
   id: string;
   role: 'USER' | 'ADMIN'; // 수신 대상 추가
-  type: 'SUCCESS' | 'ERROR' | 'INFO';
+  type: 'SUCCESS' | 'ERROR' | 'INFO' | 'WARNING';
   title: string;
   message: string;
   timestamp: string;

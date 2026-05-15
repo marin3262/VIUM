@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  BarChart3, AlertCircle, CheckCircle2, Clock, 
-  MapPin, ShieldCheck, TrendingUp, Search, XCircle,
-  Activity, Zap, Info, Check, X, Wrench, MessageSquare, EyeOff, ShieldAlert, RotateCcw,
+  CheckCircle2, Clock, 
+  MapPin, XCircle,
+  Activity, X, Wrench, MessageSquare, EyeOff, RotateCcw,
   Image as ImageIcon
 } from 'lucide-react';
 import { useStationStore } from '../../store/stationStore';
 import { useUserStore } from '../../store/userStore';
 import { stationService } from '../../services/stationService';
 import { useNotificationStore } from '../../store/notificationStore';
-import { Review } from '../../types';
+import type { Review } from '../../types';
 
 const SERVER_ROOT = 'http://localhost:8000'; // 이미지 호스팅 서버 주소
 
@@ -20,13 +20,13 @@ export const AdminDashboard: React.FC = () => {
   
   const [reports, setReports] = useState<any[]>([]);
   const [allReviews, setAllReviews] = useState<Review[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  
   const [processingId, setProcessingId] = useState<number | string | null>(null);
   const [activeTab, setActiveTab] = useState<'REPORTS' | 'MAINTENANCE' | 'REVIEWS'>('REPORTS');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const loadAdminData = async () => {
-    setIsLoading(true);
+    
     try {
       const [reportsRes, reviewsRes] = await Promise.all([
         stationService.getReports(),
@@ -41,7 +41,7 @@ export const AdminDashboard: React.FC = () => {
     } catch (error) {
       console.error('관리자 데이터 로드 실패:', error);
     } finally {
-      setIsLoading(false);
+      
     }
   };
 
@@ -163,7 +163,7 @@ export const AdminDashboard: React.FC = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: '전체 충전소', value: stations.length, icon: MapPin, color: 'text-blue-600', bg: 'bg-blue-50' },
-          { label: '점검 중 충전기', value: totalFaulty, icon: AlertCircle, color: 'text-red-600', bg: 'bg-red-50' },
+          { label: '점검 중 충전기', value: totalFaulty, icon: Clock, color: 'text-red-600', bg: 'bg-red-50' },
           { label: '대기 중 제보', value: pendingReports, icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50' },
           { label: '정상 노출 리뷰', value: visibleReviewsCount, icon: MessageSquare, color: 'text-green-600', bg: 'bg-green-50' },
         ].map((stat, i) => (
@@ -274,7 +274,7 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                       
                       <button 
-                        onClick={() => handleToggleReviewStatus(review.id, review.status)}
+                        onClick={() => handleToggleReviewStatus(review.id, review.status || "VISIBLE")}
                         disabled={processingId === `review_${review.id}`}
                         className={`shrink-0 self-start sm:self-center px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 border ${
                           isHidden 

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { 
-  X, MapPin, Zap, Clock, ShieldAlert, Navigation, Star, TrendingUp, 
-  MessageSquare, AlertCircle, Car, Activity, Power, Wrench
+  X, MapPin, Zap, ShieldAlert, Navigation, Star, TrendingUp, 
+  MessageSquare, Car, Activity, Power, Wrench
 } from 'lucide-react';
 import type { ChargingStation, StationStatus } from '../../types';
 import { useStationStore } from '../../store/stationStore';
@@ -21,22 +21,10 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
   const totalSlots = station.chargers.length;
 
   // 1. 고장난 충전기 식별 로직
-  const faultyChargers = useMemo(() => 
-    station.chargers.filter(c => c.status === 'Faulty'),
-    [station.chargers]
-  );
+  
 
   // 버튼 텍스트 동적 결정 로직
-  let buttonText = '충전 시작하기';
-  if (availableSlots === 0) {
-    if (faultyChargers.length === totalSlots) {
-      buttonText = '현재 점검 중입니다';
-    } else if (faultyChargers.length > 0) {
-      buttonText = '만차 (일부 점검 중)';
-    } else {
-      buttonText = '충전기 만차';
-    }
-  }
+  
 
   // 2. 요금 그래프 데이터 로직
   const displayPriceHistory = useMemo(() => {

@@ -13,7 +13,7 @@ export const useMileage = () => {
    * @param rewardAmount 적립할 마일리지 금액
    * @param reason (선택) 활동 로그에 기록될 이유. (서버 동기화는 이미 완료된 상태)
    */
-  const triggerRewardAnimation = useCallback((rewardAmount: number, reason?: string) => {
+  const triggerRewardAnimation = useCallback((rewardAmount: number, ) => {
     setRewardToast({ show: true, amount: rewardAmount });
     setIsCounting(true);
 
