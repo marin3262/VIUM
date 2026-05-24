@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { Compass, Navigation, Clock, Flag, X } from "lucide-react";
 import { useStationStore } from "../../store/stationStore";
 import type { ChargingStation } from "../../types";
 
@@ -29,7 +30,37 @@ export function StationMap({ stations, onMarkerClick, onMapClick, isLoading }: S
   const [isReady, setIsReady] = useState(false);
   
   const [isUserDragging, setIsUserDragging] = useState(false); // 드래그 중 업데이트 방지
-  const { getAvailableSlots } = useStationStore();
+  const { 
+    getAvailableSlots, 
+    userLocation, 
+    routePath, 
+    routeSummary, 
+    clearRoute, 
+    setUserLocation 
+  } = useStationStore();
+
+  const userMarkerRef = useRef<any>(null);
+  const polylineRef = useRef<any>(null);
+
+  // 내 위치 잡기 핸들러
+  const handleMyLocation = () => {
+    if (!navigator.geolocation) return;
+    
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        const pos = { lat: latitude, lng: longitude };
+        setUserLocation(pos);
+        
+        if (mapInstance.current) {
+          mapInstance.current.setCenter(new window.kakao.maps.LatLng(latitude, longitude));
+          mapInstance.current.setLevel(4);
+        }
+      },
+      (error) => console.error(error),
+      { enableHighAccuracy: true }
+    );
+  };
 
   // 1. 카카오 지도 API 로드 대기
   useEffect(() => {
@@ -284,6 +315,80 @@ export function StationMap({ stations, onMarkerClick, onMapClick, isLoading }: S
 
   }, [stations, isReady, onMarkerClick, getAvailableSlots, createSvgMarkerUri, isUserDragging]);
 
+  // 5. 내 위치 마커 및 경로(Polyline) 렌더링
+  useEffect(() => {
+    if (!isReady || !mapInstance.current) return;
+
+    const map = mapInstance.current;
+
+    // 5.1 내 위치 마커 관리
+    if (userLocation) {
+      const pos = new window.kakao.maps.LatLng(userLocation.lat, userLocation.lng);
+      
+      if (!userMarkerRef.current) {
+        // 커스텀 SVG 마커 (내 위치) - 파란색 펄스 효과
+        const svg = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
+            <circle cx="18" cy="18" r="14" fill="#3b82f6" fill-opacity="0.2">
+              <animate attributeName="r" from="8" to="16" dur="1.5s" repeatCount="indefinite" />
+              <animate attributeName="fill-opacity" from="0.5" to="0" dur="1.5s" repeatCount="indefinite" />
+            </circle>
+            <circle cx="18" cy="18" r="6" fill="#3b82f6" stroke="white" stroke-width="2" />
+          </svg>
+        `.trim();
+        
+        const markerImage = new window.kakao.maps.MarkerImage(
+          `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+          new window.kakao.maps.Size(36, 36),
+          { offset: new window.kakao.maps.Point(18, 18) }
+        );
+
+        const marker = new window.kakao.maps.Marker({
+          position: pos,
+          image: markerImage,
+          zIndex: 10
+        });
+        marker.setMap(map);
+        userMarkerRef.current = marker;
+      } else {
+        userMarkerRef.current.setPosition(pos);
+      }
+    } else if (userMarkerRef.current) {
+      userMarkerRef.current.setMap(null);
+      userMarkerRef.current = null;
+    }
+
+    // 5.2 경로(Polyline) 관리
+    if (routePath && routePath.length > 0) {
+      // routePath는 [[lng, lat], ...] 형태이므로 변환 시 주의
+      const path = routePath.map(p => new window.kakao.maps.LatLng(p[1], p[0]));
+      
+      if (polylineRef.current) {
+        polylineRef.current.setMap(null);
+      }
+
+      const polyline = new window.kakao.maps.Polyline({
+        path: path,
+        strokeWeight: 6,
+        strokeColor: '#6366f1',
+        strokeOpacity: 0.9,
+        strokeStyle: 'solid'
+      });
+      
+      polyline.setMap(map);
+      polylineRef.current = polyline;
+
+      // 5.3 경로가 화면에 다 들어오도록 Bounds 조정
+      const bounds = new window.kakao.maps.LatLngBounds();
+      path.forEach(pos => bounds.extend(pos));
+      map.setBounds(bounds, 80, 80, 80, 80); // 상하좌우 여백 80px 부여
+    } else if (polylineRef.current) {
+      polylineRef.current.setMap(null);
+      polylineRef.current = null;
+    }
+
+  }, [isReady, userLocation, routePath]);
+
   return (
     <div className="w-full h-full relative" style={{ minHeight: '300px' }}>
       <div 
@@ -305,11 +410,75 @@ export function StationMap({ stations, onMarkerClick, onMapClick, isLoading }: S
           </div>
         </div>
       )}
-      {isLoading && (
+      {isLoading && stations.length === 0 && (
         <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-20 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
             <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
             <p className="text-xs font-black text-blue-600 uppercase tracking-widest">Updating Map...</p>
+          </div>
+        </div>
+      )}
+
+      {/* 내 위치 버튼 */}
+      <button 
+        onClick={handleMyLocation}
+        className="absolute bottom-6 right-6 z-30 w-12 h-12 bg-white rounded-2xl shadow-xl border border-gray-100 flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-all active:scale-95"
+        title="내 위치 찾기"
+      >
+        <Compass size={24} />
+      </button>
+
+      {/* [UX 개편] 주행 요약 대시보드 (하단 중앙) */}
+      {routeSummary && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-48px)] max-w-sm bg-white/90 backdrop-blur-md rounded-[32px] shadow-2xl border border-white/20 p-5 animate-in slide-in-from-bottom-10 duration-500">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
+                <Navigation size={18} fill="currentColor" />
+              </div>
+              <h4 className="text-sm font-black text-gray-900">길찾기 주행 모드</h4>
+            </div>
+            <button 
+              onClick={clearRoute}
+              className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-6">
+            <div className="flex-1 flex flex-col gap-1">
+              <div className="flex items-center gap-1.5 text-gray-400">
+                <Clock size={12} />
+                <span className="text-[10px] font-bold uppercase tracking-wider">예상 시간</span>
+              </div>
+              <p className="text-xl font-black text-indigo-600">
+                {Math.round(routeSummary.duration / 60)}<span className="text-sm font-bold ml-0.5">분</span>
+              </p>
+            </div>
+
+            <div className="w-px h-8 bg-gray-100" />
+
+            <div className="flex-1 flex flex-col gap-1">
+              <div className="flex items-center gap-1.5 text-gray-400">
+                <Flag size={12} />
+                <span className="text-[10px] font-bold uppercase tracking-wider">남은 거리</span>
+              </div>
+              <p className="text-xl font-black text-gray-900">
+                {(routeSummary.distance / 1000).toFixed(1)}<span className="text-sm font-bold ml-0.5">km</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between">
+            <p className="text-[10px] font-bold text-gray-400 truncate max-w-[200px]">
+              목적지: {routeSummary.destinationName || '선택한 충전소'}
+            </p>
+            <div className="flex gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-300 animate-pulse delay-75" />
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-100 animate-pulse delay-150" />
+            </div>
           </div>
         </div>
       )}

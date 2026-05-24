@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { MapPin, Coins, Search, ShieldCheck, ArrowRight, Maximize2, Minimize2, Plus, Star } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { MapPin, Coins, Search, ShieldCheck, ArrowRight, Maximize2, Minimize2, Plus, Star, User as UserIcon } from 'lucide-react';
 
 // --- Types ---
 import type { ChargingStation } from './types';
@@ -13,6 +13,7 @@ import { ReportModal } from './components/station/ReportModal';
 import { ChargingFlowModal } from './components/station/ChargingFlowModal';
 import { ReviewModal } from './components/station/ReviewModal';
 import { AdminDashboard } from './components/admin/AdminDashboard';
+import { MyPage } from './components/user/MyPage';
 import { RewardToast } from './components/reward/RewardToast';
 import { NotificationOverlay } from './components/reward/NotificationOverlay';
 import { PillFilter } from './components/station/PillFilter';
@@ -36,21 +37,31 @@ function App() {
     activeFilter,
     selectedConnector,
     onlyAvailable,
-    searchQuery
+    searchQuery,
+    routeSummary // 길찾기 상태 추가
   } = useStationStore();
   const { rewardToast, isCounting, triggerRewardAnimation } = useMileage();
   const { addNotification } = useNotificationStore();
 
+  const mapSectionRef = useRef<HTMLDivElement>(null); // 지도 영역 참조 추가
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isMyPageOpen, setIsMyPageOpen] = useState(false);
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
   const [summaryStationId, setSummaryStationId] = useState<string | null>(null);
   const [reportTargetId, setReportTargetId] = useState<string | null>(null);
   const [chargingTargetId, setChargingTargetId] = useState<string | null>(null);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
-  const [isMapExpanded, setIsMapExpanded] = useState(false);
+  const [isMapExpanded, setIsMapExpanded] = useState(!localStorage.getItem('vium_token')); // 토큰이 없으면(비회원 예상) 확장 상태로 시작
   
   const [visibleCount, setVisibleCount] = useState(6);
+
+  // --- 화면 스크롤 핸들러 ---
+  const scrollToMap = useCallback(() => {
+    if (mapSectionRef.current) {
+      mapSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, []);
 
   // --- 반응형 데이터 추출 (메모이제이션 강화) ---
   const filteredStations = useMemo(() => getFilteredStations() || [], [stations, activeFilter, selectedConnector, onlyAvailable, searchQuery, getFilteredStations]);
@@ -71,7 +82,7 @@ function App() {
     chargingTargetId ? (stations.find(s => s.station_id === chargingTargetId) || null) : null, 
   [stations, chargingTargetId]);
 
-  // --- 핸들러 메모이제이션 (지도 컴포넌트 최적화용) ---
+  // --- 핸들러 메모이제이션 ---
   const handleMarkerClick = useCallback((s: ChargingStation) => {
     setSelectedStationId(null);
     setSummaryStationId(s.station_id);
@@ -85,7 +96,7 @@ function App() {
     setSelectedStationId(s.station_id);
   }, []);
 
-  // --- 서버 데이터 로드 (게스트/회원 공통) ---
+  // --- 서버 데이터 로드 ---
   useEffect(() => {
     fetchUser();
     fetchStations();
@@ -114,7 +125,6 @@ function App() {
         if (newConnectionStationId) break;
       }
       
-      // 하드웨어 연결이 감지되면 자동으로 충전 플로우 모달을 띄웁니다.
       if (newConnectionStationId) {
         setChargingTargetId(prev => {
           if (!prev) {
@@ -128,7 +138,7 @@ function App() {
     setPrevStations(stations);
   }, [stations]);
 
-  // 전역 브릿지 함수 고도화
+  // 전역 브릿지 함수
   useEffect(() => {
     (window as any).openStationDetail = (stationId: string) => {
       if (stationId) setSelectedStationId(stationId);
@@ -161,6 +171,10 @@ function App() {
       setSelectedStationId(null);
       setSummaryStationId(id);
       setIsMapExpanded(true);
+      
+      // 화면 이동 및 지도 포커스 연출
+      scrollToMap();
+      
       setTimeout(() => {
         if (window.focusStationOnMap) {
           window.focusStationOnMap(id);
@@ -218,6 +232,7 @@ function App() {
       <NotificationOverlay isAdminMode={isAdminMode} />
       
       {isAuthModalOpen && <AuthModal onClose={() => setIsAuthModalOpen(false)} />}
+      {isMyPageOpen && <MyPage onClose={() => setIsMyPageOpen(false)} />}
       
       {selectedStation && (
         <StationModal 
@@ -247,6 +262,7 @@ function App() {
         isAdmin={isAdminMode} 
         onToggleAdmin={() => setIsAdminMode(!isAdminMode)} 
         onOpenAuth={() => setIsAuthModalOpen(true)}
+        onOpenMyPage={() => setIsMyPageOpen(true)}
       />
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 md:py-10">
@@ -254,86 +270,15 @@ function App() {
           <AdminDashboard />
         ) : (
           <div className="flex flex-col gap-8">
-            <div className={`grid grid-cols-1 ${isMapExpanded ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-8 transition-all duration-500`}>
+            <div className="transition-all duration-500">
               
-              <div className="lg:col-span-1 space-y-6">
-                <div className={`bg-blue-600 rounded-3xl p-8 text-white shadow-xl shadow-blue-200 relative overflow-hidden transition-all duration-300 ${isCounting ? 'scale-105 ring-4 ring-blue-300' : ''}`}>
-                  <div className="relative z-10">
-                    <div className="flex justify-between items-start mb-4">
-                      <p className="text-blue-100 text-sm font-medium italic">{user?.level || '에코 드라이버'}</p>
-                      <Coins size={24} className="opacity-80" />
-                    </div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-black leading-none">{(user?.mileage_balance || 0).toLocaleString()}</span>
-                      <span className="text-xl font-medium opacity-80">P</span>
-                    </div>
-                    <div className="mt-6 flex items-center justify-between bg-black/10 rounded-2xl p-3 backdrop-blur-sm border border-white/10">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck size={16} className="text-green-400" />
-                        <span className="text-xs font-bold text-blue-50">커뮤니티 신뢰도</span>
-                      </div>
-                      <span className="text-sm font-black text-white">{user?.trust_score || 100}점</span>
-                    </div>
-                  </div>
-                  <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
-                </div>
-
-                {pendingReviewStation && (
-                  <button 
-                    onClick={() => {
-                      if (isAuthenticated) {
-                        setIsReviewModalOpen(true);
-                      } else {
-                        addNotification({
-                          role: 'USER',
-                          type: 'INFO',
-                          title: '로그인이 필요합니다 🔐',
-                          message: '리뷰를 남기고 포인트를 받으시려면 먼저 로그인해 주세요.'
-                        });
-                        setIsAuthModalOpen(true);
-                      }
-                    }}
-                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 rounded-3xl p-6 text-white shadow-xl shadow-purple-100 flex flex-col gap-4 group transition-all active:scale-95 animate-in slide-in-from-left-5 duration-500"
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="bg-white/20 p-2 rounded-xl backdrop-blur-md">
-                        <Star size={20} className="text-yellow-300 fill-yellow-300" />
-                      </div>
-                      <div className="bg-black/20 px-3 py-1 rounded-full text-[10px] font-black tracking-widest uppercase">Special Quest</div>
-                    </div>
-                    <div className="text-left">
-                      <h4 className="font-black text-sm leading-tight italic">방금 이용하신 충전소는 어떠셨나요?</h4>
-                      <p className="text-[11px] text-purple-100 mt-1 font-medium">{pendingReviewStation.station_name} 리뷰 남기고 100P 받기</p>
-                    </div>
-                    <div className="flex items-center gap-2 text-[10px] font-black bg-white/10 w-fit px-4 py-2 rounded-xl group-hover:bg-white/20 transition-colors">
-                      리뷰 작성하기 <ArrowRight size={12} />
-                    </div>
-                  </button>
-                )}
-
-                <div className="hidden lg:block bg-white rounded-3xl p-6 border border-gray-100 shadow-sm h-[320px] overflow-y-auto no-scrollbar">
-                  <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm"><Search size={16} className="text-blue-500" />최근 활동</h3>
-                  <div className="space-y-4">
-                    {user?.mileage_logs?.map((log) => (
-                      <div key={log.log_id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-2xl transition-colors">
-                        <div>
-                          <p className="text-xs font-bold text-gray-700 leading-tight">{log.description}</p>
-                          <p className="text-[10px] text-gray-400 mt-1">{new Date(log.created_at).toLocaleDateString()}</p>
-                        </div>
-                        <span className={`text-xs font-black ${log.amount > 0 ? 'text-blue-600' : 'text-red-500'}`}>
-                          {log.amount > 0 ? '+' : ''}{log.amount.toLocaleString()}
-                        </span>
-                      </div>
-                    ))}
-                    {!user?.mileage_logs?.length && (
-                      <div className="text-center py-10 text-gray-400 text-xs">활동 내역이 없습니다.</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className={`${isMapExpanded ? 'lg:col-span-3' : 'lg:col-span-2'} space-y-6 transition-all duration-500`}>
-                <div className={`bg-white rounded-3xl border border-gray-100 shadow-lg overflow-hidden relative group z-0 transition-[height,width] duration-500 ease-in-out ${isMapExpanded ? 'h-[600px]' : 'h-64 md:h-80'}`} style={{ willChange: 'height, width' }}>
+              {/* Main Content Area (Full Width for everyone) */}
+              <div className="space-y-6">
+                <div 
+                  ref={mapSectionRef}
+                  className={`bg-white rounded-3xl border border-gray-100 shadow-lg overflow-hidden relative group z-0 transition-[height,width] duration-500 ease-in-out ${isMapExpanded ? 'h-[600px]' : 'h-64 md:h-80'}`} 
+                  style={{ willChange: 'height, width' }}
+                >
                   <div className="absolute inset-0 z-0">
                     <StationMap 
                       stations={filteredStations} 
@@ -354,7 +299,7 @@ function App() {
                     />
                   )}
                   
-                  <div className="absolute top-4 left-4 z-10">
+                  <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
                     <button 
                       onClick={() => setIsMapExpanded(!isMapExpanded)}
                       className="bg-white/95 backdrop-blur shadow-2xl border border-gray-200 p-3 rounded-2xl text-gray-700 hover:bg-gray-50 transition-all active:scale-95 flex items-center gap-2 group/btn"
@@ -364,15 +309,70 @@ function App() {
                     </button>
                   </div>
 
-                  <div className="absolute bottom-4 left-4 right-4 bg-white/90 backdrop-blur p-4 rounded-2xl shadow-lg flex items-center justify-between z-10 pointer-events-none border border-white/50">
-                    <div className="flex items-center gap-3">
-                      <div className="bg-red-100 p-2 rounded-xl text-red-600">
-                        <MapPin size={18} />
-                      </div>
-                      <div>
-                        <span className="text-xs font-black text-gray-400 uppercase tracking-tighter">Current Monitoring Area</span>
-                        <p className="text-sm font-black text-gray-800">양주시 행정구역 전역</p>
-                      </div>
+                  {/* Guest Login Banner */}
+                  {!isAuthenticated && (
+                    <div className={`absolute left-1/2 -translate-x-1/2 z-10 transition-all duration-700 ease-in-out ${
+                      routeSummary 
+                        ? 'top-6 w-auto max-w-[90%]' 
+                        : 'bottom-6 w-full max-w-sm px-4'
+                    } animate-in slide-in-from-bottom-5`}>
+                      <button 
+                        onClick={() => setIsAuthModalOpen(true)}
+                        className={`bg-gray-900/90 backdrop-blur-xl text-white rounded-[32px] shadow-2xl border border-white/10 flex items-center justify-between group hover:bg-black transition-all whitespace-pre-line ${
+                          routeSummary ? 'px-5 py-3 rounded-full' : 'p-6'
+                        }`}
+                      >
+                        <div className="text-left flex items-center gap-3">
+                          <p className={`font-black leading-tight italic break-keep ${routeSummary ? 'text-xs' : 'text-sm'}`}>
+                            {routeSummary ? '가입하고 마일리지 받기 ✨' : '지금 가입하고\n첫 마일리지를 받으세요! 🎉'}
+                          </p>
+                          {!routeSummary && (
+                            <p className="text-[10px] text-gray-400 mt-1 font-bold break-keep">회원가입 즉시 1,000P 지급 및 실시간 충전 연동</p>
+                          )}
+                        </div>
+                        <div className={`${routeSummary ? 'ml-3' : 'bg-blue-600 p-3 rounded-2xl group-hover:scale-110'} transition-transform`}>
+                          <ArrowRight size={routeSummary ? 14 : 20} />
+                        </div>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Member Review Quest Banner (Relocated) */}
+                  {isAuthenticated && pendingReviewStation && (
+                    <div className={`absolute left-1/2 -translate-x-1/2 z-10 transition-all duration-700 ease-in-out ${
+                      routeSummary 
+                        ? 'top-6 w-auto max-w-[90%]' 
+                        : 'bottom-6 w-full max-w-sm px-4'
+                    } animate-in slide-in-from-bottom-5`}>
+                      <button 
+                        onClick={() => setIsReviewModalOpen(true)}
+                        className={`bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-2xl border border-white/10 flex items-center justify-between group hover:shadow-purple-200 transition-all active:scale-95 whitespace-pre-line ${
+                          routeSummary ? 'px-5 py-3 rounded-full' : 'p-6 rounded-[32px]'
+                        }`}
+                      >
+                        <div className="text-left flex items-center gap-3">
+                          <div className={`flex items-center gap-2 ${routeSummary ? '' : 'mb-1'}`}>
+                            <Star size={routeSummary ? 12 : 14} className="text-yellow-300 fill-yellow-300" />
+                            {!routeSummary && <span className="bg-black/20 px-2 py-0.5 rounded-full text-[8px] font-black tracking-widest uppercase">Special Quest</span>}
+                          </div>
+                          <p className={`font-black leading-tight italic break-keep ${routeSummary ? 'text-xs' : 'text-sm'}`}>
+                            {routeSummary ? '리뷰 퀘스트 진행 중 🎁' : `방금 충전한\n${pendingReviewStation.station_name}은 어떠셨나요?`}
+                          </p>
+                        </div>
+                        <div className={`${routeSummary ? 'ml-3' : 'bg-white/20 p-3 rounded-2xl group-hover:bg-white/30'} transition-colors`}>
+                          <ArrowRight size={routeSummary ? 14 : 20} />
+                        </div>
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur p-4 rounded-2xl shadow-lg flex items-center gap-3 z-10 pointer-events-none border border-white/50">
+                    <div className="bg-red-100 p-2 rounded-xl text-red-600">
+                      <MapPin size={18} />
+                    </div>
+                    <div>
+                      <span className="text-xs font-black text-gray-400 uppercase tracking-tighter">Current Area</span>
+                      <p className="text-sm font-black text-gray-800">양주시 행정구역 전역</p>
                     </div>
                   </div>
                 </div>
@@ -391,7 +391,7 @@ function App() {
                     </div>
                   </div>
 
-                  <div className={`grid grid-cols-1 ${isMapExpanded ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4 transition-all duration-500`}>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 transition-all duration-500">
                     {pagedStations.map((station) => (
                       <StationCard key={station.station_id} station={station} onClick={handleStationCardClick} />
                     ))}
@@ -419,7 +419,7 @@ function App() {
           </div>
         )}
       </main>
-      <MobileNav />
+      <MobileNav onOpenMyPage={() => setIsMyPageOpen(true)} />
     </div>
   );
 }

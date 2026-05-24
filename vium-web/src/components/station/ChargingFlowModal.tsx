@@ -33,8 +33,11 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
   const isCompletedRef = useRef(false);
   const targetChargerIdRef = useRef<string | null>(null);
 
-  // 실시간 하드웨어 배터리 잔량 동기화
+  // 실시간 하드웨어 배터리 잔량 동기화 (충전 시작 전까지만 반영)
   useEffect(() => {
+    // 충전 중이거나 완료 대기 중일 때는 외부 업데이트를 차단하여 시뮬레이션 루프 방지
+    if (step === 'CHARGING' || step === 'WAITING_EXIT' || step === 'SUCCESS') return;
+
     if (station?.current_battery !== undefined && station.current_battery !== null) {
       const hwBattery = Math.floor(station.current_battery);
       setCurrentSoc(hwBattery);
@@ -45,7 +48,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
         setTargetSoc(Math.min(100, hwBattery + 10));
       }
     }
-  }, [station?.current_battery, targetSoc]);
+  }, [station?.current_battery, targetSoc, step]);
 
   // 목표 충전기 ID 획득 (모달 진입 시점의 충전기 추적)
   useEffect(() => {
@@ -387,6 +390,10 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
               <p className="text-[10px] leading-relaxed font-bold text-gray-500">{reward.desc}</p>
             </div>
             <button onClick={() => {
+              // 충전 시작 시점의 배터리 잔량을 최종 스냅샷으로 고정
+              const finalStartSoc = currentSoc;
+              setProgress(finalStartSoc);
+
               addNotification({ role: 'USER', type: 'INFO', title: '충전 시작 ⚡', message: `${station.station_name}에서 충전을 시작합니다.` });
               addNotification({ role: 'ADMIN', type: 'INFO', title: '충전 개시 모니터링 📡', message: `${station.station_name} 구역에서 충전 세션이 시작되었습니다.` });
               setStep('CHARGING');

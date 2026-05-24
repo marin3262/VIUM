@@ -11,12 +11,21 @@ interface StationState {
   searchQuery: string;
   isLoading: boolean;
   
+  // GPS & Routing
+  userLocation: { lat: number; lng: number } | null;
+  routePath: [number, number][]; // [[lng, lat], ...]
+  routeSummary: { distance: number; duration: number; destinationName?: string } | null;
+  
   // Actions
   fetchStations: () => Promise<void>;
   setActiveFilter: (filter: ChargerType | 'All') => void;
   setSelectedConnector: (connector: string | 'All') => void;
   setOnlyAvailable: (available: boolean) => void;
   setSearchQuery: (query: string) => void;
+  
+  fetchRoute: (origin: { lat: number; lng: number }, destination: { lat: number; lng: number }, destName?: string) => Promise<void>;
+  clearRoute: () => void;
+  setUserLocation: (location: { lat: number; lng: number } | null) => void;
   
   // Computed (Helper functions)
   getAvailableSlots: (station: ChargingStation) => number;
@@ -31,8 +40,17 @@ export const useStationStore = create<StationState>((set, get) => ({
   searchQuery: '',
   isLoading: false,
 
+  userLocation: null,
+  routePath: [],
+  routeSummary: null,
+
   fetchStations: async () => {
-    set({ isLoading: true });
+    // 데이터가 아예 없는 최초 로딩 시에만 isLoading을 true로 설정하여 전체 화면 로딩 표시
+    const isInitialLoad = get().stations.length === 0;
+    if (isInitialLoad) {
+      set({ isLoading: true });
+    }
+    
     try {
       const response = await stationService.getStations();
       if (response.success && response.data) {
@@ -41,7 +59,9 @@ export const useStationStore = create<StationState>((set, get) => ({
     } catch (error) {
       console.error('Failed to fetch stations:', error);
     } finally {
-      set({ isLoading: false });
+      if (isInitialLoad) {
+        set({ isLoading: false });
+      }
     }
   },
 
@@ -49,6 +69,32 @@ export const useStationStore = create<StationState>((set, get) => ({
   setSelectedConnector: (connector) => set({ selectedConnector: connector }),
   setOnlyAvailable: (available) => set({ onlyAvailable: available }),
   setSearchQuery: (query) => set({ searchQuery: query }),
+
+  fetchRoute: async (origin, destination, destName) => {
+    set({ isLoading: true });
+    try {
+      const originStr = `${origin.lng},${origin.lat}`;
+      const destStr = `${destination.lng},${destination.lat}`;
+      const response = await stationService.getDirections(originStr, destStr);
+      
+      if (response.success && response.data) {
+        set({ 
+          routePath: response.data.path,
+          routeSummary: {
+            ...response.data.summary,
+            destinationName: destName // 전달받은 충전소 이름 강제 주입
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch route:', error);
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  clearRoute: () => set({ routePath: [], routeSummary: null }),
+  setUserLocation: (location) => set({ userLocation: location }),
 
   getAvailableSlots: (station) => {
     if (!station || !Array.isArray(station.chargers)) return 0;

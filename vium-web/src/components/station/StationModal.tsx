@@ -16,14 +16,93 @@ interface StationModalProps {
 export const StationModal: React.FC<StationModalProps> = ({ station, onClose, onShowOnMap }) => {
   if (!station) return null;
 
-  const { getAvailableSlots } = useStationStore();
+  const { 
+    getAvailableSlots, 
+    userLocation, 
+    fetchRoute, 
+    routeSummary, 
+    clearRoute,
+    setUserLocation, // 누락되었던 함수 추가
+    isLoading: isRouteLoading 
+  } = useStationStore();
   const availableSlots = getAvailableSlots(station);
   const totalSlots = station.chargers.length;
 
+  // 0. 실시간 거리 계산 함수 (Haversine Formula)
+  const calculatedDistance = useMemo(() => {
+    if (!userLocation || !station.latitude || !station.longitude) return null;
+    
+    const lat1 = userLocation.lat;
+    const lon1 = userLocation.lng;
+    const lat2 = Number(station.latitude);
+    const lon2 = Number(station.longitude);
+    
+    const R = 6371; // 지구 반지름 (km)
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c; // km 단위 거리
+    
+    if (distance < 1) {
+      return `${Math.round(distance * 1000)}m`;
+    }
+    return `${distance.toFixed(1)}km`;
+  }, [userLocation, station.latitude, station.longitude]);
+
+  // 길찾기 실행 핸들러
+  const handleGetDirections = () => {
+    if (!navigator.geolocation) {
+      alert("이 브라우저에서는 GPS를 지원하지 않습니다.");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        const origin = { lat: latitude, lng: longitude };
+        
+        setUserLocation(origin);
+        await fetchRoute(
+          origin, 
+          { lat: Number(station.latitude), lng: Number(station.longitude) },
+          station.station_name
+        );
+        
+        // UX 개편: 경로 탐색 완료 시 모달을 닫고 지도를 보여줌
+        onShowOnMap();
+        onClose(); // 모달 닫기 추가
+      },
+      (error) => {
+        console.error("Geolocation Error:", error);
+        alert("위치 정보를 가져오는데 실패했습니다. 권한 설정을 확인해주세요.");
+      },
+      { enableHighAccuracy: true }
+    );
+  };
+
+  // 모달 닫을 때 경로 정보 초기화
+  const handleClose = () => {
+    clearRoute();
+    onClose();
+  };
+
   // 1. 고장난 충전기 식별 로직
-  
+  const faultyChargers = useMemo(() => 
+    station.chargers.filter(c => c.status === 'Faulty'), 
+    [station.chargers]
+  );
+  const isAllFaulty = faultyChargers.length === totalSlots;
 
   // 버튼 텍스트 동적 결정 로직
+  const buttonText = useMemo(() => {
+    if (isAllFaulty) return '점검 중인 충전소';
+    if (availableSlots === 0) return '현재 만차 (대기 필요)';
+    return '충전 시작하기';
+  }, [isAllFaulty, availableSlots]);
   
 
   // 2. 요금 그래프 데이터 로직
@@ -57,6 +136,13 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
       );
   }, [station.reviews]);
 
+  // 4. 평균 평점 계산 (실시간 반영)
+  const avgRating = useMemo(() => {
+    if (sortedReviews.length === 0) return "0.0";
+    const total = sortedReviews.reduce((acc, r) => acc + r.rating, 0);
+    return (total / sortedReviews.length).toFixed(1);
+  }, [sortedReviews]);
+
   // [정밀 관제 UI] 상태별 스타일 맵
   const statusConfig: Record<StationStatus, { label: string, color: string, bg: string, icon: any, anim?: string }> = {
     'Available': { label: '사용 가능', color: 'text-green-600', bg: 'bg-green-50', icon: Power },
@@ -70,7 +156,7 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
       <div className="bg-white w-full max-w-lg rounded-t-[40px] sm:rounded-[40px] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-10 duration-500 max-h-[95vh] flex flex-col">
         {/* Header */}
         <div className="relative min-h-[160px] bg-gradient-to-br from-blue-600 to-indigo-700 p-8 flex flex-col justify-end shrink-0">
-          <button onClick={onClose} className="absolute top-6 right-6 p-2 bg-white/20 hover:bg-white/30 rounded-full text-white transition-all"><X size={20} /></button>
+          <button onClick={handleClose} className="absolute top-6 right-6 p-2 bg-white/20 hover:bg-white/30 rounded-full text-white transition-all"><X size={20} /></button>
           <div className="space-y-2 pr-10">
             <h2 className="text-2xl font-black text-white leading-tight break-keep">{station.station_name}</h2>
             <p className="text-blue-100/80 text-xs flex items-start gap-1.5 leading-relaxed">
@@ -91,12 +177,12 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
             <div className="bg-orange-50 p-3 rounded-2xl border border-orange-100 flex flex-col items-center">
               <Star className="text-orange-500 mb-1" size={18} fill="currentColor" />
               <p className="text-[9px] font-bold text-orange-400 uppercase">평점</p>
-              <p className="text-sm font-black text-orange-700">4.8</p>
+              <p className="text-sm font-black text-orange-700">{avgRating}</p>
             </div>
             <div className="bg-green-50 p-3 rounded-2xl border border-green-100 flex flex-col items-center">
               <Navigation className="text-green-600 mb-1" size={18} />
               <p className="text-[9px] font-bold text-green-400 uppercase">거리</p>
-              <p className="text-sm font-black text-green-700">{station.distance || '0.8km'}</p>
+              <p className="text-sm font-black text-green-700">{calculatedDistance || station.distance || '-'}</p>
             </div>
           </div>
 
@@ -206,6 +292,20 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
               className="flex-1 bg-blue-50 border-2 border-blue-100 text-blue-600 py-4 rounded-2xl text-[11px] font-black flex flex-col items-center justify-center gap-1 hover:bg-blue-100 transition-all"
             >
               <MapPin size={16} /> 위치확인
+            </button>
+
+            <button 
+              onClick={handleGetDirections}
+              disabled={isRouteLoading}
+              className={`flex-[2] ${routeSummary ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-indigo-100 text-indigo-600'} border-2 py-4 rounded-2xl text-[11px] font-black flex flex-col items-center justify-center gap-1 hover:opacity-90 transition-all disabled:opacity-50`}
+            >
+              {isRouteLoading ? (
+                <div className="w-4 h-4 border-2 border-indigo-200 border-t-white rounded-full animate-spin"></div>
+              ) : (
+                <>
+                  <Navigation size={16} /> {routeSummary ? '경로 재탐색' : '길찾기 시작'}
+                </>
+              )}
             </button>
 
             <button 

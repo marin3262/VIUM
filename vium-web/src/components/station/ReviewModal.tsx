@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Star, X, CheckCircle2, Loader2 } from 'lucide-react';
-import type { ChargingStation } from '../../types';
+import React, { useState, useEffect } from 'react';
+import { Star, X, CheckCircle2, Loader2, Send } from 'lucide-react';
+import type { ChargingStation, Review } from '../../types';
 import { useStationStore } from '../../store/stationStore';
 import { useUserStore } from '../../store/userStore';
 import { useNotificationStore } from '../../store/notificationStore';
@@ -9,12 +9,13 @@ import { stationService } from '../../services/stationService';
 
 interface ReviewModalProps {
   station: ChargingStation | null;
+  editReview?: Review | null; // 신규: 수정 모드 지원
   onClose: () => void;
 }
 
-export const ReviewModal: React.FC<ReviewModalProps> = ({ station, onClose }) => {
+export const ReviewModal: React.FC<ReviewModalProps> = ({ station, editReview, onClose }) => {
   const { fetchStations } = useStationStore();
-  const { fetchUser } = useUserStore(); // 추가: 유저 정보 갱신 액션
+  const { fetchUser, updateReview: updateReviewAction } = useUserStore();
   const { addNotification } = useNotificationStore();
   const { triggerRewardAnimation } = useMileage();
   
@@ -22,6 +23,16 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, onClose }) =>
   const [content, setContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+
+  const isEditMode = !!editReview;
+
+  // 수정 모드일 경우 데이터 초기화
+  useEffect(() => {
+    if (editReview) {
+      setRating(editReview.rating);
+      setContent(editReview.content);
+    }
+  }, [editReview]);
 
   if (!station) return null;
 
@@ -33,42 +44,50 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, onClose }) =>
     setIsSubmitting(true);
 
     try {
-      // 1. 서버에 리뷰 제출 (필드명 station_id로 보정)
-      const response = await stationService.submitReview(station.station_id, {
-        rating,
-        content: content.trim()
-      } as any);
-
-      if (response.success) {
-        // 2. [수리] 유저 정보 및 충전소 데이터 즉시 새로고침
-        await Promise.all([
-          fetchUser(),
-          fetchStations()
-        ]);
-
-        // 3. 보상 애니메이션 실행
-        triggerRewardAnimation(100);
-        
-        // 4. 시스템 알림
-        addNotification({
-          role: 'USER',
-          type: 'SUCCESS',
-          title: '리뷰 보너스 적립! 🎁',
-          message: '소중한 리뷰 감사합니다. 100P가 적립되었습니다.'
-        });
-
-        setIsSubmitted(true);
-        setTimeout(() => { 
-          setIsSubmitted(false); 
-          onClose(); 
-          setContent('');
-          setRating(5);
-        }, 2500);
+      if (isEditMode && editReview) {
+        // --- 1. 수정 로직 ---
+        const response = await updateReviewAction(editReview.id, rating, content.trim());
+        if (response.success) {
+          addNotification({
+            role: 'USER',
+            type: 'SUCCESS',
+            title: '리뷰 수정 완료 ✨',
+            message: '리뷰가 성공적으로 업데이트되었습니다.'
+          });
+          onClose();
+        } else {
+          alert(response.error || '리뷰 수정 중 오류가 발생했습니다.');
+        }
       } else {
-        alert('리뷰 등록 중 오류가 발생했습니다.');
+        // --- 2. 신규 등록 로직 ---
+        const response = await stationService.submitReview(station.station_id, {
+          rating,
+          content: content.trim()
+        } as any);
+
+        if (response.success) {
+          await Promise.all([fetchUser(), fetchStations()]);
+          triggerRewardAnimation(100);
+          addNotification({
+            role: 'USER',
+            type: 'SUCCESS',
+            title: '리뷰 보너스 적립! 🎁',
+            message: '소중한 리뷰 감사합니다. 100P가 적립되었습니다.'
+          });
+
+          setIsSubmitted(true);
+          setTimeout(() => { 
+            setIsSubmitted(false); 
+            onClose(); 
+            setContent('');
+            setRating(5);
+          }, 2000);
+        } else {
+          alert('리뷰 등록 중 오류가 발생했습니다.');
+        }
       }
     } catch (error) {
-      console.error('리뷰 제출 실패:', error);
+      console.error('리뷰 처리 실패:', error);
     } finally {
       setIsSubmitting(false);
     }
@@ -82,7 +101,9 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, onClose }) =>
           <>
             <div className="flex justify-between items-start mb-6">
               <div>
-                <h3 className="text-xl font-black text-gray-900">현장 리뷰 남기기</h3>
+                <h3 className="text-xl font-black text-gray-900">
+                  {isEditMode ? '나의 리뷰 수정' : '현장 리뷰 남기기'}
+                </h3>
                 <p className="text-gray-400 text-xs mt-1">{station.station_name}</p>
               </div>
               <button 
@@ -124,15 +145,18 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, onClose }) =>
               <button 
                 disabled={!isValid || isSubmitting}
                 onClick={handleSubmit}
-                className="w-full bg-blue-600 disabled:bg-gray-200 text-white py-5 rounded-3xl text-lg font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95"
+                className={`w-full ${isEditMode ? 'bg-indigo-600' : 'bg-blue-600'} disabled:bg-gray-200 text-white py-5 rounded-3xl text-lg font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95`}
               >
                 {isSubmitting ? (
                   <>
                     <Loader2 size={20} className="animate-spin" />
-                    리뷰 등록 중...
+                    {isEditMode ? '리뷰 수정 중...' : '리뷰 등록 중...'}
                   </>
                 ) : (
-                  '리뷰 등록 및 보상 받기'
+                  <>
+                    {isEditMode ? <Send size={20} /> : null}
+                    {isEditMode ? '수정 내용 저장하기' : '리뷰 등록 및 보상 받기'}
+                  </>
                 )}
               </button>
             </div>

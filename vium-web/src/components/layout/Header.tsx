@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Zap, Bell, ShieldCheck, User, LogOut, LogIn } from 'lucide-react';
+import { Zap, Bell, ShieldCheck, User, LogOut, LogIn, UserCircle } from 'lucide-react';
 import { useUserStore } from '../../store/userStore';
 import { useNotificationStore } from '../../store/notificationStore';
 import { NotificationPanel } from '../reward/NotificationPanel';
@@ -7,10 +7,11 @@ import { NotificationPanel } from '../reward/NotificationPanel';
 interface HeaderProps {
   isAdmin: boolean;
   onToggleAdmin: () => void;
-  onOpenAuth: () => void; // 신규: 로그인 모달 오픈 액션
+  onOpenAuth: () => void;
+  onOpenMyPage: () => void; // 마이페이지 오픈 액션 추가
 }
 
-export const Header: React.FC<HeaderProps> = ({ isAdmin, onToggleAdmin, onOpenAuth }) => {
+export const Header: React.FC<HeaderProps> = ({ isAdmin, onToggleAdmin, onOpenAuth, onOpenMyPage }) => {
   const { user, isAuthenticated, logout } = useUserStore();
   const { notifications } = useNotificationStore();
   const [isNotiOpen, setIsNotiOpen] = useState(false);
@@ -31,7 +32,7 @@ export const Header: React.FC<HeaderProps> = ({ isAdmin, onToggleAdmin, onOpenAu
         </div>
 
         <div className="flex items-center gap-4">
-          {isAuthenticated && (
+          {isAuthenticated && user?.is_admin && (
             <button 
               onClick={onToggleAdmin}
               className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black transition-all ${
@@ -72,8 +73,14 @@ export const Header: React.FC<HeaderProps> = ({ isAdmin, onToggleAdmin, onOpenAu
                 {isProfileOpen && (
                   <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-[24px] shadow-2xl border border-gray-100 p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                     <button 
+                      onClick={() => { onOpenMyPage(); setIsProfileOpen(false); }}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-blue-50 rounded-2xl text-xs font-black transition-colors"
+                    >
+                      <UserCircle size={16} className="text-blue-500" /> 마이페이지
+                    </button>
+                    <button 
                       onClick={() => { logout(); setIsProfileOpen(false); }}
-                      className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-2xl text-xs font-black transition-colors"
+                      className="w-full flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-2xl text-xs font-black transition-colors mt-1"
                     >
                       <LogOut size={16} /> 로그아웃
                     </button>

@@ -38,7 +38,10 @@ export const apiClient = {
       const response = await fetch(`${BASE_URL}${endpoint}`, {
         headers: apiClient.getHeaders()
       });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.message || `HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
       return { success: true, data };
     } catch (error) {
@@ -57,7 +60,10 @@ export const apiClient = {
         headers: apiClient.getHeaders(),
         body: JSON.stringify(body),
       });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.message || `HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
       return { 
         success: true, 
@@ -81,7 +87,10 @@ export const apiClient = {
         headers: apiClient.getHeaders(true),
         body: formData,
       });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.message || `HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
       return { success: true, data };
     } catch (error) {
@@ -100,11 +109,35 @@ export const apiClient = {
         headers: apiClient.getHeaders(),
         body: JSON.stringify(body),
       });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.message || `HTTP error! status: ${response.status}`);
+      }
       const data = await response.json();
       return { success: true, data };
     } catch (error) {
       console.error(`API PATCH Error [${endpoint}]:`, error);
+      return { success: false, error: (error as Error).message };
+    }
+  },
+
+  /**
+   * DELETE 요청
+   */
+  delete: async <T>(endpoint: string): Promise<ApiResponse<T>> => {
+    try {
+      const response = await fetch(`${BASE_URL}${endpoint}`, {
+        method: 'DELETE',
+        headers: apiClient.getHeaders(),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.message || `HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      return { success: true, data };
+    } catch (error) {
+      console.error(`API DELETE Error [${endpoint}]:`, error);
       return { success: false, error: (error as Error).message };
     }
   }

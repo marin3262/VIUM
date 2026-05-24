@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
 import uuid
+import httpx
+import os
 
 from ...db.session import get_db
 from ...models import models
@@ -36,8 +38,52 @@ def read_stations(db: Session = Depends(get_db)):
 
 @router.get("/users/me", response_model=schemas.UserProfile)
 def read_user_me(current_user: models.User = Depends(get_current_user)):
-    """현재 사용자 정보를 조회합니다."""
+    """현재 사용자 정보를 조회합니다. (리뷰 및 제보 내역 포함)"""
     return current_user
+
+@router.delete("/users/me", response_model=schemas.ActionResponse)
+def delete_user_me(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """회원 탈퇴: 유저 계정 및 연관된 모든 데이터(로그, 리뷰, 제보)를 안전하게 삭제합니다."""
+    try:
+        # 1. 객체 동기화: current_user가 현재 DB 세션에 속해 있는지 확인 및 병합
+        user = db.merge(current_user)
+        user_id = user.user_id
+
+        # 2. 명시적 순차 삭제: 외래 키 제약 조건을 고려하여 자식 데이터부터 먼저 삭제
+        # (SQLAlchemy의 자동 삭제 기능이 물리 DB 제약 조건과 충돌할 경우를 대비한 안전장치)
+        
+        # 2.1 마일리지 로그 삭제
+        db.query(models.MileageLog).filter(models.MileageLog.user_id == user_id).delete(synchronize_session=False)
+        
+        # 2.2 리뷰 삭제
+        db.query(models.Review).filter(models.Review.user_id == user_id).delete(synchronize_session=False)
+        
+        # 2.3 제보 삭제
+        db.query(models.Report).filter(models.Report.user_id == user_id).delete(synchronize_session=False)
+        
+        # 3. 부모 유저 삭제
+        db.delete(user)
+        
+        # 모든 작업이 성공하면 한꺼번에 커밋
+        db.commit()
+        
+        print(f"✅ [Withdrawal Success]: User {user_id} and all related data removed.")
+        return {"success": True, "message": "회원 탈퇴가 성공적으로 완료되었습니다."}
+        
+    except Exception as e:
+        db.rollback()
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"💥 [Withdrawal Error Detail]:\n{error_trace}")
+        
+        # 사용자에게는 친절한 메시지, 로그에는 상세 정보를 남깁니다.
+        raise HTTPException(
+            status_code=500, 
+            detail=f"회원 탈퇴 처리 중 시스템 오류가 발생했습니다. (사유: {str(e)})"
+        )
 
 @router.post("/stations/{station_id}/reviews", response_model=schemas.RewardResponse)
 def create_station_review(
@@ -46,13 +92,15 @@ def create_station_review(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """리뷰를 작성하고 마일리지를 지급합니다."""
+    """리뷰를 작성하고 마일리지를 지급합니다. 작성 당시의 충전소 정보(이름, 주소)를 영구 기록합니다."""
     station = db.query(models.Station).filter(models.Station.station_id == station_id).first()
     if not station:
         raise HTTPException(status_code=404, detail="Station not found")
 
     new_review = models.Review(
         station_id=station_id,
+        station_name=station.station_name, # 작성 당시 이름 스냅샷
+        station_address=station.address,   # 작성 당시 주소 스냅샷
         user_id=current_user.user_id,
         user_name=current_user.nickname,
         rating=review_in.rating,
@@ -92,7 +140,7 @@ def read_all_reviews(
 @router.patch("/admin/reviews/{review_id}/status", response_model=schemas.ActionResponse)
 def update_review_status(
     review_id: int,
-    update_in: schemas.ReviewUpdate,
+    update_in: schemas.ReviewAdminUpdate,
     db: Session = Depends(get_db),
     admin: models.User = Depends(get_current_admin_user)
 ):
@@ -119,6 +167,65 @@ def update_review_status(
 
     db.commit()
     return {"success": True, "message": f"리뷰가 {new_status} 상태로 변경되었습니다."}
+
+@router.patch("/reviews/{review_id}", response_model=schemas.ActionResponse)
+def update_review(
+    review_id: int,
+    review_in: schemas.ReviewUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """사용자가 자신의 리뷰를 수정합니다."""
+    review = db.query(models.Review).filter(
+        models.Review.id == review_id,
+        models.Review.user_id == current_user.user_id
+    ).first()
+    
+    if not review:
+        raise HTTPException(status_code=404, detail="리뷰를 찾을 수 없거나 수정 권한이 없습니다.")
+
+    if review_in.rating is not None:
+        review.rating = review_in.rating
+    if review_in.content is not None:
+        review.content = review_in.content
+    
+    db.commit()
+    return {"success": True, "message": "리뷰가 성공적으로 수정되었습니다."}
+
+@router.delete("/reviews/{review_id}", response_model=schemas.ActionResponse)
+def delete_review(
+    review_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """사용자가 자신의 리뷰를 삭제합니다. 물리적으로 지우지 않고 'DELETED' 상태로 변경(Soft Delete)합니다."""
+    review = db.query(models.Review).filter(
+        models.Review.id == review_id,
+        models.Review.user_id == current_user.user_id
+    ).first()
+
+    if not review:
+        raise HTTPException(status_code=404, detail="리뷰를 찾을 수 없거나 삭제 권한이 없습니다.")
+
+    if review.status == 'DELETED':
+        return {"success": True, "message": "이미 삭제된 리뷰입니다."}
+
+    # 마일리지 회수 (Abuse 방지)
+    penalty_amount = 100
+    current_user.mileage_balance -= penalty_amount
+    
+    new_log = models.MileageLog(
+        user_id=current_user.user_id,
+        description=f"리뷰 삭제로 인한 포인트 회수",
+        amount=-penalty_amount
+    )
+    db.add(new_log)
+    
+    # 물리 삭제 대신 상태만 변경
+    review.status = 'DELETED'
+    db.commit()
+
+    return {"success": True, "message": f"리뷰가 삭제 처리되었으며 {penalty_amount}P가 회수되었습니다."}
 
 @router.post("/reports", response_model=schemas.ActionResponse)
 async def create_report(
@@ -259,4 +366,62 @@ def complete_charging(
         "points_added": reward_amount,
         "total_balance": current_user.mileage_balance,
         "message": "충전 완료 및 신뢰도 회복 완료"
+    }
+
+@router.get("/directions", response_model=schemas.DirectionResponse)
+async def get_directions(origin: str, destination: str):
+    """
+    카카오 모빌리티 API를 프록시하여 길찾기 경로를 가져옵니다.
+    origin, destination: "longitude,latitude" 형식의 문자열
+    """
+    rest_api_key = os.getenv("KAKAO_REST_API_KEY")
+    if not rest_api_key:
+        raise HTTPException(status_code=500, detail="Kakao API key not configured")
+
+    url = "https://apis-navi.kakaomobility.com/v1/directions"
+    headers = {"Authorization": f"KakaoAK {rest_api_key}"}
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "summary": "false" # 상세 경로(vertexes)를 가져오기 위해 false로 설정
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers, params=params)
+            data = response.json()
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            print(f"💥 [Kakao API HTTP Error]: {e.response.text}")
+            raise HTTPException(status_code=e.response.status_code, detail="Kakao API call failed")
+        except Exception as e:
+            print(f"💥 [Directions Proxy Error]: {e}")
+            raise HTTPException(status_code=500, detail="Internal server error while fetching directions")
+
+    # Kakao API 응답 구조: data['routes'][0]['result_code'] 확인
+    if not data.get("routes") or data["routes"][0].get("result_code") != 0:
+        error_msg = data["routes"][0].get("result_msg") if data.get("routes") else "Routing failed"
+        result_code = data["routes"][0].get("result_code") if data.get("routes") else "No data"
+        print(f"❌ [Kakao Routing Failed]: {error_msg} (code: {result_code})")
+        raise HTTPException(status_code=400, detail=error_msg)
+
+    # vertexes(경로 좌표) 추출 및 변환
+    path = []
+    route = data["routes"][0]
+    for section in route["sections"]:
+        for road in section["roads"]:
+            # vertexes는 [x1, y1, x2, y2, ...] 형태임
+            v = road["vertexes"]
+            for i in range(0, len(v), 2):
+                path.append([v[i], v[i+1]])
+
+    return {
+        "success": True,
+        "path": path,
+        "summary": {
+            "distance": route["summary"]["distance"],
+            "duration": route["summary"]["duration"],
+            "origin": route["summary"]["origin"],
+            "destination": route["summary"]["destination"]
+        }
     }

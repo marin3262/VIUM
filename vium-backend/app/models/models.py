@@ -1,7 +1,13 @@
 from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, DECIMAL, JSON
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from ..db.session import Base
+
+# 한국 표준시(KST) 정의
+KST = timezone(timedelta(hours=9))
+
+def get_kst_now():
+    return datetime.now(KST)
 
 class User(Base):
     __tablename__ = "users"
@@ -14,11 +20,11 @@ class User(Base):
     level = Column(String(50), default="에코 드라이버")
     # 신규: 악성 유저 관리를 위한 신뢰도 점수 (추후 확장용)
     trust_score = Column(Integer, default=100) 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_kst_now)
 
-    reviews = relationship("Review", back_populates="user")
-    reports = relationship("Report", back_populates="user")
-    mileage_logs = relationship("MileageLog", back_populates="user", order_by="desc(MileageLog.created_at)")
+    reviews = relationship("Review", back_populates="user", cascade="all, delete-orphan")
+    reports = relationship("Report", back_populates="user", cascade="all, delete-orphan")
+    mileage_logs = relationship("MileageLog", back_populates="user", order_by="desc(MileageLog.created_at)", cascade="all, delete-orphan")
 
 class Station(Base):
     __tablename__ = "stations"
@@ -59,7 +65,7 @@ class Report(Base):
     # 변경: is_verified (Boolean) -> status (String)
     # 상태: PENDING (대기), APPROVED (승인), REJECTED (반려)
     status = Column(String(20), default="PENDING")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_kst_now)
 
     user = relationship("User", back_populates="reports")
     charger = relationship("Charger", back_populates="reports")
@@ -70,7 +76,7 @@ class MileageLog(Base):
     user_id = Column(Integer, ForeignKey("users.user_id"))
     amount = Column(Integer)
     description = Column(String(100))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_kst_now)
 
     user = relationship("User", back_populates="mileage_logs")
 
@@ -78,14 +84,17 @@ class Review(Base):
     __tablename__ = "reviews"
     id = Column(Integer, primary_key=True, autoincrement=True)
     station_id = Column(String(50), ForeignKey("stations.station_id"))
+    station_name = Column(String(100)) # 신규: 작성 당시 충전소명 기록
+    station_address = Column(String(200)) # 신규: 작성 당시 주소 기록
     user_id = Column(Integer, ForeignKey("users.user_id"))
     user_name = Column(String(100))
     rating = Column(Integer)
     content = Column(String(1000))
     # 신규: 리뷰 노출 제어 (Soft Delete)
-    # 상태: VISIBLE (정상 노출), HIDDEN (관리자 숨김)
+    # 상태: VISIBLE (정상 노출), HIDDEN (관리자 숨김), DELETED (사용자 삭제)
     status = Column(String(20), default="VISIBLE")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_kst_now)
+    updated_at = Column(DateTime, default=get_kst_now, onupdate=get_kst_now)
 
     station = relationship("Station", back_populates="reviews")
     user = relationship("User", back_populates="reviews")

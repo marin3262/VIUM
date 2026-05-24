@@ -18,20 +18,28 @@ export const stationService = {
 
   submitReview: async (
     stationId: string, 
-    review: Omit<Review, 'id' | 'created_at' | 'user_name' | 'status'>
+    review: Omit<Review, 'id' | 'created_at' | 'updated_at' | 'user_name' | 'status'>
   ): Promise<ApiResponse<any>> => {
     return await apiClient.post<any>(`/stations/${stationId}/reviews`, review);
   },
 
+  updateReview: async (reviewId: number, rating: number, content: string): Promise<ApiResponse<any>> => {
+    return await apiClient.patch<any>(`/reviews/${reviewId}`, { rating, content });
+  },
+
+  deleteReview: async (reviewId: number): Promise<ApiResponse<any>> => {
+    return await apiClient.delete<any>(`/reviews/${reviewId}`);
+  },
+
   /**
-   * [신규] 관리자 전용: 전체 리뷰(숨김 포함) 조회
+   * 관리자 전용: 전체 리뷰(숨김 포함) 조회
    */
   getAllReviews: async (): Promise<ApiResponse<Review[]>> => {
     return await apiClient.get<Review[]>('/admin/reviews');
   },
 
   /**
-   * [신규] 관리자 전용: 리뷰 상태(숨김/노출) 변경
+   * 관리자 전용: 리뷰 상태(숨김/노출) 변경
    */
   updateReviewStatus: async (reviewId: number, status: 'VISIBLE' | 'HIDDEN'): Promise<ApiResponse<any>> => {
     return await apiClient.patch<any>(`/admin/reviews/${reviewId}/status`, { status });
@@ -70,7 +78,27 @@ export const stationService = {
     return await apiClient.post<any>(`/stations/${stationId}/complete-charging`, {});
   },
 
+  withdrawAccount: async (): Promise<ApiResponse<any>> => {
+    return await apiClient.delete<any>('/users/me');
+  },
+
+  getDirections: async (origin: string, destination: string): Promise<ApiResponse<any>> => {
+    return await apiClient.get<any>(`/directions?origin=${origin}&destination=${destination}`);
+  },
+
   // --- Auth Services ---
+  sendVerificationEmail: async (email: string): Promise<ApiResponse<any>> => {
+    return await apiClient.post<any>('/auth/send-verification', { email });
+  },
+
+  verifyEmailCode: async (email: string, code: string): Promise<ApiResponse<any>> => {
+    return await apiClient.post<any>('/auth/verify-code', { email, code });
+  },
+
+  checkNickname: async (nickname: string): Promise<ApiResponse<any>> => {
+    return await apiClient.get<any>(`/auth/check-nickname?nickname=${encodeURIComponent(nickname)}`);
+  },
+
   signup: async (userData: any): Promise<ApiResponse<any>> => {
     return await apiClient.post<any>('/auth/signup', userData);
   },
