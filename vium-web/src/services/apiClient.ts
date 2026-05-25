@@ -3,7 +3,8 @@
  * 실제 백엔드 서버(FastAPI)와 통신하기 위한 기저 설정입니다.
  */
 
-const BASE_URL = 'http://localhost:8000/api/v1';
+// [중요] KT Cloud 공인 IP로 설정 (ERR_CONNECTION_REFUSED 해결)
+const BASE_URL = 'http://211.253.31.143:8000/api/v1';
 
 export interface ApiResponse<T> {
   success: boolean;
