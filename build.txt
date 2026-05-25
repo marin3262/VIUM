@@ -1,0 +1,133 @@
+(.venv) root@Vium:~/vium-workspace/apps/vium-master/vium-web# npm run build
+
+> vium-web@0.0.0 build
+> tsc -b && vite build
+
+src/components/admin/AdminDashboard.tsx:382:37 - error TS2367: This comparison appears to be unintentional because the types '"VISIBLE" | "HIDDEN" | undefined' and '"DELETED"' have no overlap.
+
+382                   const isDeleted = review.status === 'DELETED';
+                                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+src/components/admin/AdminDashboard.tsx:385:43 - error TS2339: Property 'updated_at' does not exist on type 'Review'.
+
+385                   const isEdited = review.updated_at &&
+                                              ~~~~~~~~~~
+
+src/components/admin/AdminDashboard.tsx:386:38 - error TS2339: Property 'updated_at' does not exist on type 'Review'.
+
+386                     (new Date(review.updated_at).getTime() - new Date(review.created_at).getTime() > 2000);
+                                         ~~~~~~~~~~
+
+src/components/admin/AdminDashboard.tsx:404:39 - error TS2339: Property 'station_name' does not exist on type 'Review'.
+
+404                               {review.station_name || targetStation?.station_name || review.station_id}
+                                          ~~~~~~~~~~~~
+
+src/components/admin/AdminDashboard.tsx:407:39 - error TS2339: Property 'station_address' does not exist on type 'Review'.
+
+407                               {review.station_address || targetStation?.address || '주소 정보 없음'}
+                                          ~~~~~~~~~~~~~~~
+
+src/components/admin/AdminDashboard.tsx:461:58 - error TS2339: Property 'updated_at' does not exist on type 'Review'.
+
+461                               최종 수정 시각: {new Date(review.updated_at!).toLocaleString()}
+                                                             ~~~~~~~~~~
+
+src/components/layout/AuthModal.tsx:1:38 - error TS6133: 'useCallback' is declared but its value is never read.
+
+1 import React, { useState, useEffect, useCallback } from 'react';
+                                       ~~~~~~~~~~~
+
+src/components/layout/AuthModal.tsx:44:19 - error TS2503: Cannot find namespace 'NodeJS'.
+
+44     let interval: NodeJS.Timeout;
+                     ~~~~~~
+
+src/components/station/ChargingFlowModal.tsx:32:10 - error TS6133: 'safetyChecks' is declared but its value is never read.
+
+32   const [safetyChecks, setSafetyChecks] = useState({ surroundings: false, cable: false, connector: false });
+            ~~~~~~~~~~~~
+
+src/components/station/ChargingFlowModal.tsx:32:24 - error TS6133: 'setSafetyChecks' is declared but its value is never read.
+
+32   const [safetyChecks, setSafetyChecks] = useState({ surroundings: false, cable: false, connector: false });
+                          ~~~~~~~~~~~~~~~
+
+src/components/station/ChargingFlowModal.tsx:265:9 - error TS6133: 'formatTime' is declared but its value is never read.
+
+265   const formatTime = (seconds: number) => {
+            ~~~~~~~~~~
+
+src/components/station/StationModal.tsx:101:9 - error TS6133: 'buttonText' is declared but its value is never read.
+
+101   const buttonText = useMemo(() => {
+            ~~~~~~~~~~
+
+src/components/station/StationSummaryOverlay.tsx:46:8 - error TS6133: 'error' is declared but its value is never read.
+
+46       (error) => alert("위치 정보를 가져올 수 없습니다."),
+          ~~~~~
+
+src/components/user/MyPage.tsx:3:3 - error TS6133: 'User' is declared but its value is never read.
+
+3   User, Coins, ShieldCheck, MessageSquare, AlertCircle,
+    ~~~~
+
+src/components/user/MyPage.tsx:3:29 - error TS6133: 'MessageSquare' is declared but its value is never read.
+
+3   User, Coins, ShieldCheck, MessageSquare, AlertCircle,
+                              ~~~~~~~~~~~~~
+
+src/components/user/MyPage.tsx:3:44 - error TS6133: 'AlertCircle' is declared but its value is never read.
+
+3   User, Coins, ShieldCheck, MessageSquare, AlertCircle,
+                                             ~~~~~~~~~~~
+
+src/components/user/MyPage.tsx:4:3 - error TS6133: 'ChevronRight' is declared but its value is never read.
+
+4   ChevronRight, LogOut, Trash2, Clock, CheckCircle2, XCircle, Edit3
+    ~~~~~~~~~~~~
+
+src/components/user/MyPage.tsx:110:52 - error TS2339: Property 'reports' does not exist on type 'UserProfile'.
+
+110               {tab === 'REPORTS' && `나의 제보 (${user.reports?.length || 0})`}
+                                                       ~~~~~~~
+
+src/components/user/MyPage.tsx:111:52 - error TS2339: Property 'reviews' does not exist on type 'UserProfile'.
+
+111               {tab === 'REVIEWS' && `나의 리뷰 (${user.reviews?.length || 0})`}
+                                                       ~~~~~~~
+
+src/components/user/MyPage.tsx:143:21 - error TS2339: Property 'reports' does not exist on type 'UserProfile'.
+
+143               {user.reports?.length > 0 ? user.reports.map((report) => (
+                        ~~~~~~~
+
+src/components/user/MyPage.tsx:143:48 - error TS2339: Property 'reports' does not exist on type 'UserProfile'.
+
+143               {user.reports?.length > 0 ? user.reports.map((report) => (
+                                                   ~~~~~~~
+
+src/components/user/MyPage.tsx:143:61 - error TS7006: Parameter 'report' implicitly has an 'any' type.
+
+143               {user.reports?.length > 0 ? user.reports.map((report) => (
+                                                                ~~~~~~
+
+src/components/user/MyPage.tsx:176:21 - error TS2339: Property 'reviews' does not exist on type 'UserProfile'.
+
+176               {user.reviews?.length > 0 ? user.reviews.map((review) => (
+                        ~~~~~~~
+
+src/components/user/MyPage.tsx:176:48 - error TS2339: Property 'reviews' does not exist on type 'UserProfile'.
+
+176               {user.reviews?.length > 0 ? user.reviews.map((review) => (
+                                                   ~~~~~~~
+
+src/components/user/MyPage.tsx:176:61 - error TS7006: Parameter 'review' implicitly has an 'any' type.
+
+176               {user.reviews?.length > 0 ? user.reviews.map((review) => (
+                                                                ~~~~~~
+
+
+Found 25 errors.
+

@@ -5,12 +5,15 @@ export type ConnectorFilterId = 'All' | 'DC Combo' | 'Chademo' | 'AC 5핀' | 'Sl
 export interface Review {
   id: number;
   station_id: string;
+  station_name?: string;
+  station_address?: string;
   user_id: number;
   user_name: string;
   rating: number;
   content: string;
-  status?: 'VISIBLE' | 'HIDDEN';
+  status?: 'VISIBLE' | 'HIDDEN' | 'DELETED';
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Charger {
@@ -44,6 +47,17 @@ export interface MileageLog {
   created_at: string;
 }
 
+export interface Report {
+  report_id: number;
+  station_id: string;
+  station_name?: string;
+  user_id: number;
+  content: string;
+  image_url?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  created_at: string;
+}
+
 export interface UserProfile {
   user_id: number;
   email: string;
@@ -53,4 +67,6 @@ export interface UserProfile {
   trust_score?: number;
   is_admin?: boolean;
   mileage_logs: MileageLog[];
+  reports: Report[];
+  reviews: Review[];
 }

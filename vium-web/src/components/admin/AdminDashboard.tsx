@@ -25,14 +25,13 @@ export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'REPORTS' | 'MAINTENANCE' | 'REVIEWS' | 'CCTV_MONITOR'>('REPORTS');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // 💡 라즈베리파이 CCTV 다중 스트리밍 도메인 (팀원 제공 URL 적용)
   const cameras = [
     { id: 1, label: "CAM-01", station_id: "3682", station_name: "양주시 신도8차 아파트 1호기", url: "https://vium-camera.ngrok.app/video/0" },
     { id: 2, label: "CAM-02", station_id: "3683", station_name: "양주시 신도8차 아파트 2호기", url: "https://vium-camera.ngrok.app/video/1" }
   ];
   
   const [selectedCamId, setSelectedCamId] = useState<number>(1);
-  const [cctvKey, setCctvKey] = useState<number>(Date.now()); // 캐시 무효화용 키
+  const [cctvKey, setCctvKey] = useState<number>(Date.now()); 
   const [cameraStatus, setCameraStatus] = useState<Record<number, boolean>>({ 1: true, 2: true });
 
   const selectedCam = cameras.find(c => c.id === selectedCamId) || cameras[0];
@@ -42,7 +41,6 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const loadAdminData = async () => {
-    
     try {
       const [reportsRes, reviewsRes] = await Promise.all([
         stationService.getReports(),
@@ -56,8 +54,6 @@ export const AdminDashboard: React.FC = () => {
       await fetchUser();
     } catch (error) {
       console.error('관리자 데이터 로드 실패:', error);
-    } finally {
-      
     }
   };
 
@@ -109,12 +105,6 @@ export const AdminDashboard: React.FC = () => {
       }
     } catch (error) {
       console.error('수리 완료 처리 중 오류:', error);
-      addNotification({
-        role: 'ADMIN',
-        type: 'ERROR',
-        title: '시스템 오류 ⚠️',
-        message: '통신 중 예상치 못한 오류가 발생했습니다.'
-      });
     } finally {
       setProcessingId(null);
     }
@@ -163,7 +153,6 @@ export const AdminDashboard: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700 pb-20">
-      {/* 사진 크게 보기 오버레이 */}
       {selectedImage && (
         <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4 animate-in zoom-in duration-300" onClick={() => setSelectedImage(null)}>
           <div className="relative max-w-4xl w-full max-h-[90vh] flex items-center justify-center">
@@ -175,7 +164,6 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* 상단 통계 그리드 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: '전체 충전소', value: stations.length, icon: MapPin, color: 'text-blue-600', bg: 'bg-blue-50' },
@@ -221,14 +209,13 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* 채널 셀렉터 (Pill Tab Style) */}
               <div className="flex gap-2 p-1.5 bg-gray-100 rounded-2xl w-fit">
                 {cameras.map((cam) => (
                   <button
                     key={cam.id}
                     onClick={() => {
                       setSelectedCamId(cam.id);
-                      setCctvKey(Date.now()); // 채널 변경 시 캐시 무효화로 즉시 연결 유도
+                      setCctvKey(Date.now());
                     }}
                     className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
                       selectedCamId === cam.id 
@@ -242,7 +229,6 @@ export const AdminDashboard: React.FC = () => {
                 ))}
               </div>
               
-              {/* 실시간 영상 모니터 프레임 (Single Focus Mode) */}
               <div className="relative w-full max-w-5xl mx-auto aspect-video bg-gray-950 rounded-[48px] p-4 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)] ring-1 ring-white/10 group">
                 <div className="relative w-full h-full rounded-[34px] overflow-hidden bg-black shadow-inner">
                   {cameraStatus[selectedCamId] !== false ? (
@@ -274,13 +260,11 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   )}
 
-                  {/* LIVE 뱃지 (Focus Mode 특화 UI) */}
                   <div className="absolute top-8 left-8 bg-black/50 backdrop-blur-2xl px-5 py-2.5 rounded-full flex items-center gap-3 border border-white/20 shadow-2xl select-none">
-                    <span className={`w-3 h-3 rounded-full ${cameraStatus[selectedCamId] !== false ? 'bg-red-500 animate-pulse shadow-[0_0_15px_rgba(239,68,68,1)]' : 'bg-gray-500'}`}></span>
+                    <span className={`w-3 h-3 rounded-full ${cameraStatus[selectedCamId] !== false ? 'bg-red-50 animate-pulse shadow-[0_0_15px_rgba(239,68,68,1)]' : 'bg-gray-500'}`}></span>
                     <span className="text-white text-[11px] font-black tracking-[0.3em] uppercase">LIVE STREAMING</span>
                   </div>
 
-                  {/* 하단 정보 오버레이 */}
                   <div className="absolute bottom-8 left-8 right-8 flex justify-between items-end pointer-events-none">
                     <div className="bg-black/60 backdrop-blur-xl p-4 rounded-2xl border border-white/10 shadow-2xl">
                       <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Active Channel</p>
@@ -292,7 +276,6 @@ export const AdminDashboard: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* 스캔라인 및 노이즈 효과 */}
                   <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.02),rgba(0,255,0,0.01),rgba(0,0,255,0.02))] bg-[length:100%_4px,3px_100%] opacity-30"></div>
                 </div>
               </div>
@@ -342,8 +325,8 @@ export const AdminDashboard: React.FC = () => {
 
                     {report.status === 'PENDING' && (
                       <div className="flex gap-2">
-                        <button onClick={() => handleProcessReport(report.report_id, 'APPROVED')} className="px-6 py-2 bg-green-600 text-white rounded-xl text-xs font-black shadow-lg shadow-green-100 hover:bg-green-700 active:scale-95 transition-all">승인 (+5점 회복)</button>
-                        <button onClick={() => handleProcessReport(report.report_id, 'REJECTED')} className="px-6 py-2 bg-white border border-gray-200 text-gray-500 rounded-xl text-xs font-bold hover:bg-gray-50 active:scale-95 transition-all">반려 (신뢰도 -5)</button>
+                        <button onClick={() => handleProcessReport(report.report_id, 'APPROVED')} className="px-6 py-2 bg-green-600 text-white rounded-xl text-xs font-black shadow-lg shadow-green-100 hover:bg-green-700 active:scale-95 transition-all">승인</button>
+                        <button onClick={() => handleProcessReport(report.report_id, 'REJECTED')} className="px-6 py-2 bg-white border border-gray-200 text-gray-500 rounded-xl text-xs font-bold hover:bg-gray-50 active:scale-95 transition-all">반려</button>
                       </div>
                     )}
                   </div>
@@ -382,15 +365,14 @@ export const AdminDashboard: React.FC = () => {
                   const isDeleted = review.status === 'DELETED';
                   const targetStation = getStationByStationId(review.station_id);
                   
-                  const isEdited = review.updated_at && 
-                    (new Date(review.updated_at).getTime() - new Date(review.created_at).getTime() > 2000);
+                  const isEdited = !!(review.updated_at && 
+                    (new Date(review.updated_at).getTime() - new Date(review.created_at).getTime() > 2000));
 
                   return (
                     <div key={review.id} className={`group rounded-[32px] border transition-all overflow-hidden flex flex-col ${
                       isDeleted ? 'bg-red-50/20 border-red-100' :
                       isHidden ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-100 shadow-sm hover:shadow-md'
                     }`}>
-                      {/* 카드 상단: 충전소 정보 바 */}
                       <div className={`px-6 py-3 flex justify-between items-center border-b ${
                         isDeleted ? 'bg-red-50/50 border-red-100' :
                         isHidden ? 'bg-gray-100/50 border-gray-200' : 'bg-blue-50/30 border-blue-50'
@@ -419,10 +401,8 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* 카드 본문: 리뷰 및 작성자 정보 */}
                       <div className="p-6 flex flex-col md:flex-row gap-6">
-                        {/* 작성자 프로필 영역 */}
-                        <div className="md:w-32 shrink-0 flex flex-col items-center text-center gap-2 border-r border-gray-50 pr-6 md:border-r">
+                        <div className="md:w-32 shrink-0 flex flex-col items-center text-center gap-2 border-r border-gray-50 pr-6">
                           <div className="w-12 h-12 bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl flex items-center justify-center text-gray-500 shadow-inner">
                             <User size={24} />
                           </div>
@@ -436,7 +416,6 @@ export const AdminDashboard: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* 리뷰 내용 영역 */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-3">
                             {isEdited && !isDeleted && (
@@ -456,14 +435,13 @@ export const AdminDashboard: React.FC = () => {
                             </p>
                           </div>
 
-                          {isEdited && !isDeleted && (
+                          {isEdited && !isDeleted && review.updated_at && (
                             <p className="mt-4 text-[10px] text-indigo-400 font-bold">
-                              최종 수정 시각: {new Date(review.updated_at!).toLocaleString()}
+                              최종 수정 시각: {new Date(review.updated_at).toLocaleString()}
                             </p>
                           )}
                         </div>
 
-                        {/* 관리 액션 영역 */}
                         {!isDeleted && (
                           <div className="shrink-0 flex items-center">
                             <button 

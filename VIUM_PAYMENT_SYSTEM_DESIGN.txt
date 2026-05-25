@@ -1,0 +1,118 @@
+# VIUM 프로젝트: 지능형 결제 및 마일리지 연동 시스템 설계서 (v1.0)
+작성일: 2026-05-19
+작성자: VIUM Senior Architect (Gemini CLI)
+
+본 문서는 전기차 충전 서비스의 핵심인 '충전-결제-마일리지' 연동 시스템을 체계적으로 구현하기 위한 설계 가이드라인입니다. 실제 결제 API(토스페이먼츠)를 연동한 시뮬레이션 환경 구축을 목표로 합니다.
+
+---
+
+## 1. 시스템 아키텍처 개요 (Payment Flow)
+
+VIUM 결제 시스템은 '선 충전, 후 정산' 방식을 채택하며, 마일리지를 현금처럼 사용하여 결제 금액을 할인받는 구조입니다.
+
+[사용자 경험 시나리오]
+1. 충전 완료: 하드웨어 신호(Arduino) 또는 목표치 도달로 충전 종료.
+2. 요금 산정: 충전량(kWh) 기반 총 요금 계산 (예: 1kWh당 300원).
+3. 마일리지 적용: 보유 마일리지 내에서 사용 금액 입력 및 실 결제액 확정.
+4. 결제창 팝업: 토스페이먼츠(Toss Payments) 테스트 결제창 팝업 및 카드 결제.
+5. 검증 및 확정: 서버 대 서버(Server-to-Server) 결제 승인 후 마일리지 차감 및 결과 반영.
+
+---
+
+## 2. 데이터베이스(DB) 설계 변경안
+
+### 2.1 ChargingSession 테이블 (신설)
+충전 세션의 시작부터 결제 완료까지의 영수증 데이터를 관리합니다.
+
+| 컬럼명 | 타입 | 제약조건 | 설명 |
+| :--- | :--- | :--- | :--- |
+| session_id | Integer | PK, AI | 세션 고유 번호 |
+| user_id | Integer | FK (users) | 결제 유저 ID |
+| station_id | String | FK (stations) | 충전소 ID |
+| charger_id | String | FK (chargers) | 사용한 충전기 ID |
+| total_price | Integer | - | 마일리지 적용 전 원본 요금 |
+| used_mileage | Integer | - | 결제 시 사용한 마일리지 |
+| final_amount | Integer | - | 실제 카드 결제 금액 |
+| payment_key | String | Nullable | 토스페이먼츠 결제 승인 키 |
+| order_id | String | Unique | 토스페이먼츠 주문 고유 번호 (UUID) |
+| status | String | - | PENDING (대기), PAID (완료), FAILED (실패) |
+| created_at | DateTime | - | 충전 시작/결제 시점 |
+
+### 2.2 User 테이블 (기존 수정)
+- `mileage_balance`: 결제 성공 시 `used_mileage`만큼 원자적(Atomic)으로 차감.
+
+---
+
+## 3. 백엔드(FastAPI) 구현 계획
+
+### 3.1 신규 엔드포인트
+1. `POST /payments/create-session`: 
+   - 충전 종료 시 요금을 계산하고 DB에 `PENDING` 상태의 세션을 생성.
+   - 프론트엔드에 `orderId`와 `amount`를 반환.
+2. `POST /payments/confirm`:
+   - 토스페이먼츠 결제창 완료 후 전달받은 `paymentKey`, `orderId`, `amount`를 수신.
+   - 토스 API 서버(`https://api.tosspayments.com/v1/payments/confirm`)로 승인 요청.
+   - 승인 성공 시 DB 세션 상태를 `PAID`로 변경하고 유저 마일리지를 차감.
+
+### 3.2 보안 강화 (Security)
+- 결제 금액 조작 방지: 프론트엔드가 보내는 금액을 믿지 않고, 승인 전 DB에 저장된 `total_price - used_mileage`와 일치하는지 백엔드에서 재검증.
+
+---
+
+## 4. 프론트엔드(React) 구현 계획
+
+### 4.1 UI 구성 요소 (ChargingFlowModal.tsx 개편)
+- **Step: BILLING (정산 단계)**:
+  - 총 충전 요금 표시.
+  - 마일리지 입력 필드 및 '전액 사용' 버튼.
+  - 최종 결제 금액 실시간 계산 UI.
+- **Step: PAYMENT_WIDGET (결제창)**:
+  - `tosspayments-sdk`를 이용한 결제위젯 렌더링.
+  - 신용카드/간편결제 선택 인터페이스.
+
+### 4.2 토스페이먼츠 SDK 연동 코드 (예시)
+```javascript
+import { loadPaymentWidget } from "@tosspayments/payment-widget-sdk";
+
+const paymentWidget = await loadPaymentWidget(clientKey, customerKey);
+paymentWidget.renderPaymentMethods("#payment-method", { value: finalAmount });
+
+// 결제하기 버튼 클릭 시
+await paymentWidget.requestPayment({
+  orderId: "UUID_STRING",
+  orderName: "VIUM 전기차 충전 요금",
+  successUrl: window.location.origin + "/payment/success",
+  failUrl: window.location.origin + "/payment/fail",
+});
+```
+
+---
+
+## 5. 구현 단계별 로드맵 (Execution Plan)
+
+### [Phase 1: 기반 구축 (Day 1)]
+- [ ] 토스페이먼츠 개발자 센터 가입 및 테스트 API 키(Client/Secret) 발급.
+- [ ] 백엔드 `models.py`에 `ChargingSession` 테이블 추가 및 마이그레이션.
+- [ ] 마일리지 차감 로그 기록을 위한 `MileageLog` 연동 로직 보강.
+
+### [Phase 2: 백엔드 API 및 프론트 UI (Day 2)]
+- [ ] `ChargingFlowModal` 내 정산(Billing) UI 및 마일리지 계산 로직 구현.
+- [ ] 백엔드 결제 세션 생성 및 검증 API 엔드포인트 개발.
+- [ ] `apiClient.ts`에 결제 관련 서버 통신 함수 추가.
+
+### [Phase 3: 결제위젯 연동 및 테스트 (Day 3)]
+- [ ] 토스페이먼츠 결제위젯 React SDK 설치 및 모달 내 이식.
+- [ ] 결제 완료 후 서버 승인(Confirm) 및 마일리지 실시간 차감 테스트.
+- [ ] 결제 실패/취소 시나리오 예외 처리.
+
+---
+
+## 6. 기대 효과
+
+1. **서비스 완성도**: 단순 정보 제공을 넘어 실제 매출이 발생하는 비즈니스 모델(BM)을 증명.
+2. **게이미피케이션 강화**: 열심히 모은 마일리지가 결제 시 "진짜 돈"으로 깎이는 경험을 제공하여 유저 참여도 극대화.
+3. **포트폴리오 가치**: 실제 핀테크 API를 연동한 경험은 기술적 난이도와 실무 능력을 입증하는 강력한 지표가 됨.
+
+---
+본 계획서는 VIUM 프로젝트의 성공적인 시연과 고도화를 위한 가이드라인입니다. 
+지시가 있을 시 즉시 Phase 1 작업에 착수하겠습니다.

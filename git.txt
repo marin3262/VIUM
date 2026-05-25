@@ -1,0 +1,63 @@
+root@Vium:~/vium-workspace/apps/vium-master# git reset --hard HEAD
+HEAD is now at 6c1ce53 chore: remove temporary fix scripts
+root@Vium:~/vium-workspace/apps/vium-master# git pull origin main
+hint: Pulling without specifying how to reconcile divergent branches is
+hint: discouraged. You can squelch this message by running one of the following
+hint: commands sometime before your next pull:
+hint: 
+hint:   git config pull.rebase false  # merge (the default strategy)
+hint:   git config pull.rebase true   # rebase
+hint:   git config pull.ff only       # fast-forward only
+hint: 
+hint: You can replace "git config" with "git config --global" to set a default
+hint: preference for all repositories. You can also pass --rebase, --no-rebase,
+hint: or --ff-only on the command line to override the configured default per
+hint: invocation.
+Username for 'https://github.com': marin3262
+Password for 'https://marin3262@github.com': 
+From https://github.com/marin3262/vium-web
+ * branch            main       -> FETCH_HEAD
+Updating 6c1ce53..ffb17e1
+Fast-forward
+ vium-backend/app/api/v1/auth.py                           | 128 +++++++++++++++++++++++++++++++---
+ vium-backend/app/api/v1/endpoints.py                      | 171 ++++++++++++++++++++++++++++++++++++++++++++-
+ vium-backend/app/api/v1/payments.py                       | 112 ++++++++++++++++++++++++++++++
+ vium-backend/app/core/mail.py                             |  31 +++++++++
+ vium-backend/app/models/models.py                         |  53 +++++++++++---
+ vium-backend/app/schemas/schemas.py                       |  86 +++++++++++++++++++++--
+ vium-backend/fix_payment_db_final.py                      |  32 +++++++++
+ vium-backend/inspect_payment_db.py                        |  20 ++++++
+ vium-backend/main.py                                      |   3 +-
+ vium-backend/migrate_payment_table.py                     |  19 +++++
+ vium-backend/nohup.out                                    |   4 ++
+ vium-backend/requirements.txt                             |  12 ++--
+ vium-backend/simulate_arduino_only.py                     |  32 +++++++++
+ vium-backend/simulate_rpi_only.py                         |  24 +++++++
+ vium-web/package-lock.json                                |   7 ++
+ vium-web/package.json                                     |   1 +
+ vium-web/src/App.tsx                                      | 230 +++++++++++++++++++++++++++++++++---------------------------
+ vium-web/src/components/admin/AdminDashboard.tsx          | 268 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++----------
+ vium-web/src/components/layout/AuthModal.tsx              | 358 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++----------
+ vium-web/src/components/layout/Header.tsx                 |  17 +++--
+ vium-web/src/components/layout/MobileNav.tsx              |  18 +++--
+ vium-web/src/components/station/ChargingFlowModal.tsx     | 520 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++---------------------------------------------------------------------------
+ vium-web/src/components/station/ReviewModal.tsx           | 106 +++++++++++++++++-----------
+ vium-web/src/components/station/StationCard.tsx           |  70 +++++++++++--------
+ vium-web/src/components/station/StationMap.tsx            | 173 ++++++++++++++++++++++++++++++++++++++++++++-
+ vium-web/src/components/station/StationModal.tsx          | 110 +++++++++++++++++++++++++++--
+ vium-web/src/components/station/StationSummaryOverlay.tsx |  77 +++++++++++++++++---
+ vium-web/src/components/user/MyPage.tsx                   | 240 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ vium-web/src/services/apiClient.ts                        |  41 +++++++++--
+ vium-web/src/services/stationService.ts                   |  53 +++++++++++++-
+ vium-web/src/store/stationStore.ts                        |  50 ++++++++++++-
+ vium-web/src/store/userStore.ts                           |  95 +++++++++++++++++++++++++
+ 32 files changed, 2563 insertions(+), 598 deletions(-)
+ create mode 100644 vium-backend/app/api/v1/payments.py
+ create mode 100644 vium-backend/app/core/mail.py
+ create mode 100644 vium-backend/fix_payment_db_final.py
+ create mode 100644 vium-backend/inspect_payment_db.py
+ create mode 100644 vium-backend/migrate_payment_table.py
+ create mode 100644 vium-backend/nohup.out
+ create mode 100644 vium-backend/simulate_arduino_only.py
+ create mode 100644 vium-backend/simulate_rpi_only.py
+ create mode 100644 vium-web/src/components/user/MyPage.tsx

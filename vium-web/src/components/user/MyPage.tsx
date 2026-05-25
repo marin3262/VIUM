@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { 
-  User, Coins, ShieldCheck, MessageSquare, AlertCircle, 
-  ChevronRight, LogOut, Trash2, Clock, CheckCircle2, XCircle, Edit3
+  Coins, LogOut, Trash2, Clock, CheckCircle2, XCircle, Edit3
 } from 'lucide-react';
 import { useUserStore } from '../../store/userStore';
 import { ReviewModal } from '../station/ReviewModal';
@@ -50,7 +49,7 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
       {/* 리뷰 수정 모달 */}
       {editingReview && (
         <ReviewModal 
-          station={{ station_id: editingReview.station_id, station_name: '내가 작성한 리뷰' } as any}
+          station={{ station_id: editingReview.station_id, station_name: editingReview.station_name || '나의 리뷰' } as any}
           editReview={editingReview}
           onClose={() => setEditingReview(null)}
         />
@@ -86,7 +85,6 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
             <div className="bg-white/10 rounded-2xl p-4 backdrop-blur-sm border border-white/10">
               <p className="text-blue-100 text-[10px] font-black uppercase tracking-widest mb-1">Trust Score</p>
               <div className="flex items-center gap-2">
-                <ShieldCheck size={20} className="text-green-300" />
                 <span className="text-2xl font-black">{user.trust_score || 100}</span>
                 <span className="text-sm font-bold opacity-80">점</span>
               </div>
@@ -151,10 +149,9 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-bold text-gray-900 truncate">충전기 {report.charger_id}</h4>
+                      <h4 className="font-bold text-gray-900 truncate">{report.station_name || '충전소'}</h4>
                       <span className="text-[10px] text-gray-400">{new Date(report.created_at).toLocaleDateString()}</span>
                     </div>
-                    <p className="text-xs text-blue-600 font-bold mb-1">{report.keyword}</p>
                     <p className="text-sm text-gray-600 mb-2 line-clamp-2">{report.content}</p>
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
                       report.status === 'PENDING' ? 'bg-orange-50 text-orange-600' : 

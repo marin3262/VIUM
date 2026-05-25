@@ -29,7 +29,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
   const [usedMileage, setUsedMileage] = useState(0);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [safetyStep, setSafetyStep] = useState(0); 
-  const [safetyChecks, setSafetyChecks] = useState({ surroundings: false, cable: false, connector: false });
   const [currentSoc, setCurrentSoc] = useState(30);
   const [targetSoc, setTargetSoc] = useState(80);
   const [progress, setProgress] = useState(30);
@@ -37,7 +36,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
   const [isConnectorDisconnected, setIsConnectorDisconnected] = useState(false);
   
   const isCompletedRef = useRef(false);
-  const isConfirmingRef = useRef(false); // 승인 중복 방지 (Ref)
+  const isConfirmingRef = useRef(false); 
   const targetChargerIdRef = useRef<string | null>(null);
 
   // --- 리다이렉트 후 컨텍스트 복구 로직 ---
@@ -113,11 +112,9 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
     const orderId = params.get('orderId');
     
     if (params.get('payment_success') === 'true' && orderId) {
-      // 1. Ref 가드로 즉시 차단
       if (isConfirmingRef.current) return;
       isConfirmingRef.current = true;
 
-      // 2. 스토리지 가드로 새로고침 차단
       const processedKey = `vium_confirmed_${orderId}`;
       if (sessionStorage.getItem(processedKey)) {
         setStep('WAITING_EXIT');
@@ -262,16 +259,11 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
 
   if (!station) return null;
 
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  };
-
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 animate-in fade-in duration-300">
       <div className="absolute inset-0 bg-blue-900/90 backdrop-blur-xl" onClick={attemptClose}></div>
       <div className="relative bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden flex flex-col transition-all duration-500">
+        
         <div className="flex justify-between items-center px-8 pt-8 pb-2">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse" />
@@ -287,10 +279,12 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
               <h3 className="text-2xl font-black text-gray-900 leading-tight">충전기 연결 감지</h3>
               <p className="text-sm text-gray-500 font-medium break-keep">차량과 충전기가 성공적으로 연결되었습니다.<br />충전을 시작하시겠습니까?</p>
             </div>
+            
             <div className="w-full bg-blue-50/50 px-6 py-4 rounded-2xl border border-blue-100 flex items-center justify-center gap-3">
               <BatteryFull className="text-blue-500" size={24} />
               <span className="text-base font-black text-blue-700">현재 배터리: {Math.floor(currentSoc)}%</span>
             </div>
+
             <div className="w-full flex gap-3 pt-2">
               <button onClick={attemptClose} className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 text-gray-500 rounded-2xl font-black transition-colors">취소</button>
               <button onClick={() => setStep('SAFETY')} className="flex-[2] py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black shadow-lg shadow-blue-200 transition-all active:scale-95">충전 진행하기</button>
@@ -304,7 +298,13 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
               <div><h3 className="text-xl font-black text-gray-900 leading-tight">안전 가디언 점검</h3><p className="text-gray-400 text-xs mt-1">충전 전 3단계를 신중하게 확인해 주세요.</p></div>
               <ShieldAlert className="text-red-500 animate-pulse" size={28} />
             </div>
-            <div className="flex gap-2">{safetyItems.map((_, i) => (<div key={i} className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${i <= safetyStep ? 'bg-blue-600' : 'bg-gray-100'}`} />))}</div>
+            
+            <div className="flex gap-2">
+              {safetyItems.map((_, i) => (
+                <div key={i} className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${i <= safetyStep ? 'bg-blue-600' : 'bg-gray-100'}`} />
+              ))}
+            </div>
+
             <div key={safetyStep} className="bg-gray-50 rounded-[40px] p-8 border border-gray-100 flex flex-col items-center justify-center text-center space-y-6 animate-in slide-in-from-right-10 duration-500 min-h-[300px]">
               <div className="w-24 h-24 rounded-full bg-white shadow-sm border border-gray-50 flex items-center justify-center shrink-0">{safetyItems[safetyStep].icon}</div>
               <div className="space-y-3">
@@ -312,24 +312,44 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
                 <p className="text-sm text-gray-500 font-medium break-keep max-w-[240px]">{safetyItems[safetyStep].desc}</p>
               </div>
             </div>
+            
             <div className="space-y-4">
-              <button onClick={handleSafetyConfirm} className="w-full bg-gray-900 text-white py-5 rounded-3xl text-lg font-black shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3"><CheckCircle2 size={20} className="text-blue-400" />{safetyStep === safetyItems.length - 1 ? '모든 점검 완료' : '확인했습니다'}</button>
-              {safetyStep > 0 && (<button onClick={() => setSafetyStep(prev => prev - 1)} className="w-full text-gray-400 text-sm font-bold hover:text-gray-600 transition-colors flex items-center justify-center gap-2"><ArrowLeft size={14} /> 이전 항목 다시 보기</button>)}
+              <button onClick={handleSafetyConfirm} className="w-full bg-gray-900 text-white py-5 rounded-3xl text-lg font-black shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3">
+                <CheckCircle2 size={20} className="text-blue-400" />
+                {safetyStep === safetyItems.length - 1 ? '모든 점검 완료' : '확인했습니다'}
+              </button>
+              
+              {safetyStep > 0 && (
+                <button 
+                  onClick={() => setSafetyStep(prev => prev - 1)} 
+                  className="w-full text-gray-400 text-sm font-bold hover:text-gray-600 transition-colors flex items-center justify-center gap-2"
+                >
+                  <ArrowLeft size={14} /> 이전 항목 다시 보기
+                </button>
+              )}
             </div>
           </div>
         )}
 
         {step === 'PLEDGE' && (
           <div className="p-8 pt-4 space-y-6 flex-1 overflow-y-auto no-scrollbar animate-in slide-in-from-bottom-5 duration-500">
-            <div className="flex justify-between items-start"><div><h3 className="text-xl font-black text-gray-900 leading-tight">충전 목표 설정</h3><p className="text-gray-400 text-xs mt-1">목표 수치에 따라 보상이 달라집니다.</p></div><BatteryFull className="text-blue-600" size={32} /></div>
+            <div className="flex justify-between items-start">
+              <div><h3 className="text-xl font-black text-gray-900 leading-tight">충전 목표 설정</h3><p className="text-gray-400 text-xs mt-1">목표 수치에 따라 보상이 달라집니다.</p></div>
+              <BatteryFull className="text-blue-600" size={32} />
+            </div>
             <div className="bg-gray-50 p-6 rounded-[32px] space-y-6 border border-gray-100">
               <div className="space-y-2"><div className="flex justify-between text-[10px] font-black text-gray-400 uppercase"><span>현재</span><span className="text-blue-600">{currentSoc}%</span></div><input type="range" min="0" max={targetSoc-5} value={currentSoc} onChange={(e) => { const v = parseInt(e.target.value); setCurrentSoc(v); setProgress(v); }} className="w-full h-1 bg-gray-200 appearance-none accent-blue-600 cursor-pointer" /></div>
               <div className="space-y-2"><div className="flex justify-between text-[10px] font-black text-gray-400 uppercase"><span>목표</span><span className="text-green-600">{targetSoc}%</span></div><input type="range" min={currentSoc+5} max="100" value={targetSoc} onChange={(e) => setTargetSoc(parseInt(e.target.value))} className="w-full h-1 bg-gray-200 appearance-none accent-green-600 cursor-pointer" /></div>
             </div>
+
             <div className={`p-5 rounded-3xl border-2 transition-all ${reward.type === 'MIN' ? 'bg-red-50 border-red-100' : reward.type === 'ECO' ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-100'}`}>
-              <div className="flex justify-between items-center mb-2"><span className="text-[10px] font-black text-gray-400 uppercase">{reward.label}</span><div className="flex items-center gap-1 font-black text-blue-600"><Coins size={14} />{reward.total}P</div></div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-[10px] font-black text-gray-400 uppercase">{reward.label}</span>
+                <div className="flex items-center gap-1 font-black text-blue-600"><Coins size={14} />{reward.total}P</div>
+              </div>
               <p className="text-[10px] leading-relaxed font-bold text-gray-500">{reward.desc}</p>
             </div>
+
             <button onClick={() => setStep('CHARGING')} className="w-full bg-blue-600 text-white py-5 rounded-3xl text-lg font-black shadow-xl active:scale-95 transition-all">충전 시작하기</button>
           </div>
         )}
@@ -347,23 +367,61 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
         {step === 'BILLING' && (
           <div className="p-8 pt-4 space-y-6 animate-in slide-in-from-bottom-5 duration-500 overflow-y-auto no-scrollbar max-h-[70vh]">
             <div className="flex justify-between items-center"><h3 className="text-2xl font-black text-gray-900 italic uppercase">Billing</h3><div className="bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-[10px] font-black tracking-tighter">RECEIPT</div></div>
+            
             <div className="bg-gray-50 rounded-3xl p-6 border-2 border-dashed border-gray-200 space-y-4">
               <div className="flex justify-between items-center text-sm"><span className="text-gray-500 font-bold">이용 요금 합계</span><span className="text-gray-900 font-black">{totalPrice.toLocaleString()}원</span></div>
               <div className="space-y-3 pt-2 border-t border-gray-200">
-                <div className="flex justify-between items-center"><span className="text-gray-500 font-bold text-sm">마일리지 할인</span><div className="flex items-center gap-2"><input type="number" value={usedMileage || ''} onChange={(e) => { const val = Math.max(0, Math.min(parseInt(e.target.value) || 0, user?.mileage_balance || 0, totalPrice)); setUsedMileage(val); }} placeholder="0" className="w-24 px-3 py-1 text-right bg-white border border-gray-200 rounded-lg text-sm font-black focus:outline-none focus:ring-2 focus:ring-blue-500" /><span className="text-[10px] font-black text-gray-400">P</span></div></div>
-                <div className="flex justify-end gap-2"><span className="text-[10px] font-bold text-gray-400">보유: {(user?.mileage_balance || 0).toLocaleString()}P</span><button onClick={() => setUsedMileage(Math.min(user?.mileage_balance || 0, totalPrice))} className="text-[10px] font-black text-blue-600 underline underline-offset-2">전액 사용</button></div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-500 font-bold text-sm">마일리지 할인</span>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="number" 
+                      value={usedMileage || ''} 
+                      onChange={(e) => {
+                        const val = Math.max(0, Math.min(parseInt(e.target.value) || 0, user?.mileage_balance || 0, totalPrice));
+                        setUsedMileage(val);
+                      }} 
+                      placeholder="0" 
+                      className="w-24 px-3 py-1 text-right bg-white border border-gray-200 rounded-lg text-sm font-black focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                    />
+                    <span className="text-[10px] font-black text-gray-400">P</span>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <span className="text-[10px] font-bold text-gray-400">보유: {(user?.mileage_balance || 0).toLocaleString()}P</span>
+                  <button onClick={() => setUsedMileage(Math.min(user?.mileage_balance || 0, totalPrice))} className="text-[10px] font-black text-blue-600 underline underline-offset-2">전액 사용</button>
+                </div>
               </div>
               <div className="flex justify-between items-center pt-4 border-t-2 border-gray-900"><span className="text-lg font-black text-gray-900">최종 결제 금액</span><span className="text-2xl font-black text-blue-600">{(totalPrice - usedMileage).toLocaleString()}원</span></div>
             </div>
-            <div className="bg-blue-50/50 p-5 rounded-3xl border border-blue-100 flex flex-col items-center gap-3"><div className="flex items-center gap-2 text-blue-600 font-black text-sm uppercase tracking-tighter"><Lock size={16} /> Secure Payment Ready</div><p className="text-[10px] text-blue-700/60 font-medium text-center">결제하기 버튼을 누르면 토스페이먼츠 안전 결제창이 열립니다.</p></div>
-            <button onClick={handlePayment} disabled={isProcessingPayment} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white py-5 rounded-3xl text-lg font-black shadow-xl shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-3">{isProcessingPayment ? <><Loader2 size={24} className="animate-spin" /> 처리 중...</> : <><Zap size={20} fill="currentColor" /> 결제창 열기</>}</button>
+
+            <div className="bg-blue-50/50 p-5 rounded-3xl border border-blue-100 flex flex-col items-center gap-3">
+              <div className="flex items-center gap-2 text-blue-600 font-black text-sm uppercase tracking-tighter">
+                <Lock size={16} /> Secure Payment Ready
+              </div>
+              <p className="text-[10px] text-blue-700/60 font-medium text-center">결제하기 버튼을 누르면 토스페이먼츠 안전 결제창이 열립니다.</p>
+            </div>
+
+            <button onClick={handlePayment} disabled={isProcessingPayment} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white py-5 rounded-3xl text-lg font-black shadow-xl shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-3">
+              {isProcessingPayment ? <><Loader2 size={24} className="animate-spin" /> 처리 중...</> : <><Zap size={20} fill="currentColor" /> 결제창 열기</>}
+            </button>
           </div>
         )}
 
         {step === 'WAITING_EXIT' && (
           <div className="p-10 pt-4 flex flex-col items-center text-center space-y-8 animate-in fade-in zoom-in duration-500">
-            <div className="relative"><div className={`w-32 h-32 rounded-full flex items-center justify-center relative z-10 ${isConnectorDisconnected ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>{isConnectorDisconnected ? <Car size={64} className="animate-bounce" /> : <Plug2 size={64} className="animate-pulse" />}</div><div className={`absolute inset-0 rounded-full animate-ping opacity-20 ${isConnectorDisconnected ? 'bg-green-400' : 'bg-blue-400'}`}></div></div>
-            <div className="space-y-2"><h3 className="text-2xl font-black text-gray-900 italic uppercase">{isConnectorDisconnected ? 'Waiting for Exit' : 'Disconnect Connector'}</h3><p className="text-sm text-gray-400 leading-relaxed">{isConnectorDisconnected ? '커넥터 분리가 확인되었습니다. 출차해 주세요.' : '차량에서 커넥터를 분리해 주세요.'}</p></div>
+            <div className="relative">
+              <div className={`w-32 h-32 rounded-full flex items-center justify-center relative z-10 ${isConnectorDisconnected ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                {isConnectorDisconnected ? <Car size={64} className="animate-bounce" /> : <Plug2 size={64} className="animate-pulse" />}
+              </div>
+              <div className={`absolute inset-0 rounded-full animate-ping opacity-20 ${isConnectorDisconnected ? 'bg-green-400' : 'bg-blue-400'}`}></div>
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-2xl font-black text-gray-900 italic uppercase">{isConnectorDisconnected ? 'Waiting for Exit' : 'Disconnect Connector'}</h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                {isConnectorDisconnected ? '커넥터 분리가 확인되었습니다. 출차해 주세요.' : '차량에서 커넥터를 분리해 주세요.'}
+              </p>
+            </div>
             <div className="w-full bg-gray-50 p-5 rounded-3xl flex items-center justify-center gap-3 font-black text-gray-400 uppercase text-xs tracking-tighter border border-gray-100"><Loader2 className="animate-spin text-blue-500" size={18} /> H/W SENSOR LIVE MONITORING</div>
           </div>
         )}
@@ -376,7 +434,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
               <p className="text-sm text-gray-400 font-medium">안전하게 출차가 완료되었습니다.</p>
             </div>
             
-            {/* 최종 보상 요약 UI 복구 */}
             <div className="w-full bg-gray-50 rounded-3xl p-6 border border-gray-100 space-y-4">
               <div className="flex justify-between items-center text-xs font-bold text-gray-500 uppercase tracking-tighter">
                 <span>Total Rewards Earned</span>
