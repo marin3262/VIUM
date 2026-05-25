@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { 
-  Coins, LogOut, Trash2, Clock, CheckCircle2, XCircle, Edit3
+  Coins, ShieldCheck, 
+  LogOut, Trash2, Clock, CheckCircle2, XCircle, Edit3
 } from 'lucide-react';
 import { useUserStore } from '../../store/userStore';
 import { ReviewModal } from '../station/ReviewModal';
@@ -49,7 +50,7 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
       {/* 리뷰 수정 모달 */}
       {editingReview && (
         <ReviewModal 
-          station={{ station_id: editingReview.station_id, station_name: editingReview.station_name || '나의 리뷰' } as any}
+          station={{ station_id: editingReview.station_id, station_name: '내가 작성한 리뷰' } as any}
           editReview={editingReview}
           onClose={() => setEditingReview(null)}
         />
@@ -85,6 +86,7 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
             <div className="bg-white/10 rounded-2xl p-4 backdrop-blur-sm border border-white/10">
               <p className="text-blue-100 text-[10px] font-black uppercase tracking-widest mb-1">Trust Score</p>
               <div className="flex items-center gap-2">
+                <ShieldCheck size={20} className="text-green-300" />
                 <span className="text-2xl font-black">{user.trust_score || 100}</span>
                 <span className="text-sm font-bold opacity-80">점</span>
               </div>
@@ -105,8 +107,8 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
               }`}
             >
               {tab === 'MILEAGE' && '마일리지 내역'}
-              {tab === 'REPORTS' && `나의 제보 (${user.reports?.length || 0})`}
-              {tab === 'REVIEWS' && `나의 리뷰 (${user.reviews?.length || 0})`}
+              {tab === 'REPORTS' && `나의 제보 (${(user.reports || []).length})`}
+              {tab === 'REVIEWS' && `나의 리뷰 (${(user.reviews || []).length})`}
             </button>
           ))}
         </div>
@@ -115,7 +117,7 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
         <div className="flex-1 overflow-y-auto p-6 md:p-8 no-scrollbar">
           {activeTab === 'MILEAGE' && (
             <div className="space-y-4">
-              {user.mileage_logs?.length > 0 ? user.mileage_logs.map((log) => (
+              {(user.mileage_logs || []).length > 0 ? user.mileage_logs.map((log) => (
                 <div key={log.log_id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl hover:bg-gray-100 transition-colors">
                   <div className="flex items-center gap-4">
                     <div className={`p-2 rounded-xl ${log.amount > 0 ? 'bg-blue-100 text-blue-600' : 'bg-red-100 text-red-600'}`}>
@@ -138,7 +140,7 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
 
           {activeTab === 'REPORTS' && (
             <div className="space-y-4">
-              {user.reports?.length > 0 ? user.reports.map((report) => (
+              {(user.reports || []).length > 0 ? user.reports!.map((report) => (
                 <div key={report.report_id} className="p-5 border border-gray-100 rounded-3xl bg-white shadow-sm flex items-start gap-4">
                   <div className={`mt-1 w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
                     report.status === 'PENDING' ? 'bg-orange-100 text-orange-600' : 
@@ -149,9 +151,10 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-bold text-gray-900 truncate">{report.station_name || '충전소'}</h4>
+                      <h4 className="font-bold text-gray-900 truncate">충전기 {report.charger_id}</h4>
                       <span className="text-[10px] text-gray-400">{new Date(report.created_at).toLocaleDateString()}</span>
                     </div>
+                    <p className="text-xs text-blue-600 font-bold mb-1">{report.keyword}</p>
                     <p className="text-sm text-gray-600 mb-2 line-clamp-2">{report.content}</p>
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
                       report.status === 'PENDING' ? 'bg-orange-50 text-orange-600' : 
@@ -170,7 +173,7 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
 
           {activeTab === 'REVIEWS' && (
             <div className="space-y-4">
-              {user.reviews?.length > 0 ? user.reviews.map((review) => (
+              {(user.reviews || []).length > 0 ? user.reviews!.map((review) => (
                 <div key={review.id} className="p-5 border border-gray-100 rounded-3xl bg-white shadow-sm">
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex items-center gap-2">
@@ -191,7 +194,7 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
                       </button>
                       <button 
                         onClick={() => handleDeleteReview(review.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
                         title="삭제"
                       >
                         <Trash2 size={14} />

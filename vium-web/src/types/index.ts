@@ -50,6 +50,8 @@ export interface MileageLog {
 export interface Report {
   report_id: number;
   station_id: string;
+  charger_id?: string;
+  keyword?: string;
   station_name?: string;
   user_id: number;
   content: string;
@@ -67,6 +69,6 @@ export interface UserProfile {
   trust_score?: number;
   is_admin?: boolean;
   mileage_logs: MileageLog[];
-  reports: Report[];
-  reviews: Review[];
+  reports?: Report[];
+  reviews?: Review[];
 }
