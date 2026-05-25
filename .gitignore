@@ -27,3 +27,11 @@ logs/
 *.jpeg
 *.gif
 .geminiignore
+
+# Additional Privacy Protection
+*.txt
+*.ino
+*.log
+nohup.out
+VIUM_*.md
+vium-backend/vium.db
