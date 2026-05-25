@@ -86,6 +86,25 @@ export const stationService = {
     return await apiClient.get<any>(`/directions?origin=${origin}&destination=${destination}`);
   },
 
+  // --- Payment Services ---
+  createPaymentSession: async (paymentData: {
+    station_id: string;
+    charger_id: string;
+    total_price: number;
+    used_mileage: number;
+    final_amount: number;
+  }): Promise<ApiResponse<any>> => {
+    return await apiClient.post<any>('/payments/create-session', paymentData);
+  },
+
+  confirmPayment: async (confirmData: {
+    paymentKey: string;
+    orderId: string;
+    amount: number;
+  }): Promise<ApiResponse<any>> => {
+    return await apiClient.post<any>('/payments/confirm', confirmData);
+  },
+
   // --- Auth Services ---
   sendVerificationEmail: async (email: string): Promise<ApiResponse<any>> => {
     return await apiClient.post<any>('/auth/send-verification', { email });

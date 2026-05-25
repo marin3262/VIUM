@@ -25,6 +25,7 @@ class User(Base):
     reviews = relationship("Review", back_populates="user", cascade="all, delete-orphan")
     reports = relationship("Report", back_populates="user", cascade="all, delete-orphan")
     mileage_logs = relationship("MileageLog", back_populates="user", order_by="desc(MileageLog.created_at)", cascade="all, delete-orphan")
+    charging_sessions = relationship("ChargingSession", back_populates="user", cascade="all, delete-orphan")
 
 class Station(Base):
     __tablename__ = "stations"
@@ -42,6 +43,7 @@ class Station(Base):
     chargers = relationship("Charger", back_populates="station", lazy="joined")
     # 리뷰 조회 시 조건부 렌더링을 위해 lazy='joined' 유지
     reviews = relationship("Review", back_populates="station", lazy="joined")
+    charging_sessions = relationship("ChargingSession", back_populates="station")
 
 class Charger(Base):
     __tablename__ = "chargers"
@@ -53,6 +55,30 @@ class Charger(Base):
 
     station = relationship("Station", back_populates="chargers")
     reports = relationship("Report", back_populates="charger")
+    charging_sessions = relationship("ChargingSession", back_populates="charger")
+
+class ChargingSession(Base):
+    __tablename__ = "charging_sessions"
+    session_id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"))
+    station_id = Column(String(50), ForeignKey("stations.station_id"))
+    charger_id = Column(String(50), ForeignKey("chargers.charger_id"))
+    
+    total_price = Column(Integer, nullable=False) # 마일리지 적용 전 원본 요금
+    used_mileage = Column(Integer, default=0) # 사용한 마일리지
+    final_amount = Column(Integer, nullable=False) # 실제 카드 결제 금액
+    
+    order_id = Column(String(100), unique=True, nullable=False) # 토스 주문 고유 번호
+    payment_key = Column(String(255), nullable=True) # 토스 결제 승인 키
+    
+    # 상태: PENDING (결제 대기), PAID (결제 완료), FAILED (결제 실패), CANCELED (취소)
+    status = Column(String(20), default="PENDING")
+    created_at = Column(DateTime, default=get_kst_now)
+    paid_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="charging_sessions")
+    station = relationship("Station", back_populates="charging_sessions")
+    charger = relationship("Charger", back_populates="charging_sessions")
 
 class Report(Base):
     __tablename__ = "reports"

@@ -32,10 +32,11 @@ if not os.path.exists(static_path):
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 # API 라우터 등록
-from app.api.v1 import auth, endpoints, hardware
+from app.api.v1 import auth, endpoints, hardware, payments
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(endpoints.router, prefix="/api/v1")
 app.include_router(hardware.router, prefix="/api/v1/hardware", tags=["Hardware"])
+app.include_router(payments.router, prefix="/api/v1/payments", tags=["Payment"])
 
 @app.get("/")
 async def root():

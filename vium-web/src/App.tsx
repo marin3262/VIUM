@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { MapPin, Coins, Search, ShieldCheck, ArrowRight, Maximize2, Minimize2, Plus, Star, User as UserIcon } from 'lucide-react';
+import { MapPin, Search, ArrowRight, Maximize2, Minimize2, Plus, Star } from 'lucide-react';
 
 // --- Types ---
 import type { ChargingStation } from './types';
@@ -27,6 +27,8 @@ import { useUserStore } from './store/userStore';
 import { useMileage } from './hooks/useMileage';
 import { useNotificationStore } from './store/notificationStore';
 
+type FlowStep = 'CONNECTION_PROMPT' | 'SAFETY' | 'PLEDGE' | 'CHARGING' | 'BILLING' | 'WAITING_EXIT' | 'SUCCESS';
+
 function App() {
   const { user, fetchUser, pendingReviewStation, setPendingReview, isAuthenticated, token } = useUserStore();
   const { 
@@ -40,7 +42,7 @@ function App() {
     searchQuery,
     routeSummary // 길찾기 상태 추가
   } = useStationStore();
-  const { rewardToast, isCounting, triggerRewardAnimation } = useMileage();
+  const { rewardToast, triggerRewardAnimation } = useMileage();
   const { addNotification } = useNotificationStore();
 
   const mapSectionRef = useRef<HTMLDivElement>(null); // 지도 영역 참조 추가
@@ -51,6 +53,7 @@ function App() {
   const [summaryStationId, setSummaryStationId] = useState<string | null>(null);
   const [reportTargetId, setReportTargetId] = useState<string | null>(null);
   const [chargingTargetId, setChargingTargetId] = useState<string | null>(null);
+  const [chargingInitialStep, setChargingInitialStep] = useState<FlowStep>('CONNECTION_PROMPT');
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [isMapExpanded, setIsMapExpanded] = useState(!localStorage.getItem('vium_token')); // 토큰이 없으면(비회원 예상) 확장 상태로 시작
   
@@ -106,6 +109,24 @@ function App() {
     return () => clearInterval(interval);
   }, [fetchUser, fetchStations, token]);
 
+  // --- 결제 후 상태 복구 (리다이렉트 대응) ---
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const isPaymentSuccess = params.get('payment_success') === 'true';
+    const isPaymentFail = params.get('payment_fail') === 'true';
+    
+    if (isPaymentSuccess || isPaymentFail) {
+      const savedId = sessionStorage.getItem('vium_last_charging_id');
+      if (savedId) {
+        console.log(`🔄 [Recovery] Restoring charging session: ${savedId}`);
+        setChargingTargetId(savedId);
+        setChargingInitialStep('BILLING');
+        // 복구 후 스토리지 비우기 (중복 방지)
+        sessionStorage.removeItem('vium_last_charging_id');
+      }
+    }
+  }, []);
+
   // --- 하드웨어 자동 충전 감지 브릿지 로직 ---
   const [prevStations, setPrevStations] = useState<ChargingStation[]>([]);
   useEffect(() => {
@@ -129,6 +150,7 @@ function App() {
         setChargingTargetId(prev => {
           if (!prev) {
             console.log(`🔌 [IoT] Auto-detected connection. Starting flow for: ${newConnectionStationId}`);
+            setChargingInitialStep('CONNECTION_PROMPT');
             return newConnectionStationId;
           }
           return prev;
@@ -189,6 +211,7 @@ function App() {
 
     const finishedStation = stations.find(s => s.station_id === finishedStationId);
     setChargingTargetId(null);
+    setChargingInitialStep('CONNECTION_PROMPT'); // 초기화 추가
 
     if (!isAuthenticated) {
       addNotification({
@@ -245,7 +268,12 @@ function App() {
         <ReportModal station={reportTarget} onClose={() => setReportTargetId(null)} />
       )}
       {chargingTarget && (
-        <ChargingFlowModal station={chargingTarget} onClose={() => setChargingTargetId(null)} onComplete={handleChargingComplete} />
+        <ChargingFlowModal 
+          station={chargingTarget} 
+          onClose={() => { setChargingTargetId(null); setChargingInitialStep('CONNECTION_PROMPT'); }} 
+          onComplete={handleChargingComplete} 
+          initialStep={chargingInitialStep}
+        />
       )}
       
       {isReviewModalOpen && pendingReviewStation && (

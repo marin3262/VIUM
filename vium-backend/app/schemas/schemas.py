@@ -99,6 +99,34 @@ class MileageLog(BaseModel):
     class Config:
         from_attributes = True
 
+# --- Payment & Charging Session Schemas ---
+class ChargingSessionBase(BaseModel):
+    station_id: str
+    charger_id: str
+    total_price: int
+    used_mileage: int
+    final_amount: int
+
+class ChargingSessionCreate(ChargingSessionBase):
+    pass
+
+class ChargingSessionConfirm(BaseModel):
+    paymentKey: str
+    orderId: str
+    amount: int
+
+class ChargingSession(ChargingSessionBase):
+    session_id: int
+    user_id: int
+    order_id: str
+    payment_key: Optional[str] = None
+    status: str
+    created_at: datetime
+    paid_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
 # --- User Schemas ---
 class UserCreate(BaseModel):
     email: str = Field(..., example="user@example.com")
@@ -143,6 +171,7 @@ class UserProfile(BaseModel):
     mileage_logs: List[MileageLog] = []
     reviews: List[Review] = [] # 내가 남긴 리뷰
     reports: List[Report] = [] # 내가 보낸 제보
+    charging_sessions: List[ChargingSession] = [] # 나의 결제 내역
 
     class Config:
         from_attributes = True

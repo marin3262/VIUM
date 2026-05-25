@@ -25,10 +25,21 @@ export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'REPORTS' | 'MAINTENANCE' | 'REVIEWS' | 'CCTV_MONITOR'>('REPORTS');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // 💡 라즈베리파이 CCTV 스트리밍 도메인 (팀원 가이드 반영)
-  const [cctvUrl] = useState<string>("https://vium-camera.ngrok.app/video"); 
+  // 💡 라즈베리파이 CCTV 다중 스트리밍 도메인 (팀원 제공 URL 적용)
+  const cameras = [
+    { id: 1, label: "CAM-01", station_id: "3682", station_name: "양주시 신도8차 아파트 1호기", url: "https://vium-camera.ngrok.app/video/0" },
+    { id: 2, label: "CAM-02", station_id: "3683", station_name: "양주시 신도8차 아파트 2호기", url: "https://vium-camera.ngrok.app/video/1" }
+  ];
+  
+  const [selectedCamId, setSelectedCamId] = useState<number>(1);
   const [cctvKey, setCctvKey] = useState<number>(Date.now()); // 캐시 무효화용 키
-  const [isCctvOnline, setIsCctvOnline] = useState<boolean>(true);
+  const [cameraStatus, setCameraStatus] = useState<Record<number, boolean>>({ 1: true, 2: true });
+
+  const selectedCam = cameras.find(c => c.id === selectedCamId) || cameras[0];
+
+  const setOnlineStatus = (id: number, status: boolean) => {
+    setCameraStatus(prev => ({ ...prev, [id]: status }));
+  };
 
   const loadAdminData = async () => {
     
@@ -200,63 +211,100 @@ export const AdminDashboard: React.FC = () => {
         <div className="p-2 md:p-6 min-h-[400px]">
           {activeTab === 'CCTV_MONITOR' && (
             <div className="p-4 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="flex justify-between items-end mb-2">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 mb-2">
                 <div>
-                  <h3 className="text-2xl font-black text-gray-900">실시간 CCTV 관제</h3>
-                  <p className="text-sm text-gray-500 mt-1 font-medium">현장 라즈베리파이 비전 센서 스트리밍 화면입니다.</p>
+                  <h3 className="text-2xl font-black text-gray-900">실시간 집중 관제</h3>
+                  <p className="text-sm text-gray-500 mt-1 font-medium">현장 비전 센서 데이터를 통해 선택한 구역을 집중 모니터링합니다.</p>
                 </div>
                 <div className="bg-gray-100 px-4 py-2 rounded-xl text-xs font-bold text-gray-600 flex items-center gap-2">
-                  <MapPin size={14} className="text-red-500" /> 양주시 신도8차 아파트 1호기
+                  <MapPin size={14} className="text-red-500" /> {selectedCam.station_name}
                 </div>
               </div>
+
+              {/* 채널 셀렉터 (Pill Tab Style) */}
+              <div className="flex gap-2 p-1.5 bg-gray-100 rounded-2xl w-fit">
+                {cameras.map((cam) => (
+                  <button
+                    key={cam.id}
+                    onClick={() => {
+                      setSelectedCamId(cam.id);
+                      setCctvKey(Date.now()); // 채널 변경 시 캐시 무효화로 즉시 연결 유도
+                    }}
+                    className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
+                      selectedCamId === cam.id 
+                        ? 'bg-white shadow-sm text-blue-600' 
+                        : 'text-gray-400 hover:text-gray-600'
+                    }`}
+                  >
+                    <Video size={14} />
+                    {cam.label} ({cam.station_id})
+                  </button>
+                ))}
+              </div>
               
-              {/* 실시간 영상 모니터 프레임 (Double Masking 구조로 모서리 튀어나옴 방지) */}
-              <div className="relative w-full max-w-4xl mx-auto aspect-video bg-gray-950 rounded-[40px] p-3 shadow-2xl ring-1 ring-white/10 group">
-                <div className="relative w-full h-full rounded-[28px] overflow-hidden bg-black shadow-inner">
-                  {isCctvOnline && cctvUrl ? (
+              {/* 실시간 영상 모니터 프레임 (Single Focus Mode) */}
+              <div className="relative w-full max-w-5xl mx-auto aspect-video bg-gray-950 rounded-[48px] p-4 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)] ring-1 ring-white/10 group">
+                <div className="relative w-full h-full rounded-[34px] overflow-hidden bg-black shadow-inner">
+                  {cameraStatus[selectedCamId] !== false ? (
                     <img 
-                      key={cctvKey}
-                      src={`${cctvUrl}${cctvUrl.includes('?') ? '&' : '?'}t=${cctvKey}`} 
-                      alt="실시간 관제 CCTV" 
-                      onError={() => setIsCctvOnline(false)}
-                      className="w-full h-full object-cover animate-in fade-in duration-1000"
+                      key={`${cctvKey}-${selectedCamId}`}
+                      src={`${selectedCam.url}${selectedCam.url.includes('?') ? '&' : '?'}t=${cctvKey}`} 
+                      alt={selectedCam.label} 
+                      onError={() => setOnlineStatus(selectedCamId, false)}
+                      onLoad={() => setOnlineStatus(selectedCamId, true)}
+                      className="w-full h-full object-cover animate-in fade-in duration-700"
                     />
                   ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500 bg-gray-900/40 backdrop-blur-sm">
-                      <VideoOff size={48} className="mb-4 opacity-50 text-red-500" />
-                      <p className="font-black text-xl text-gray-300">CCTV 연결 오프라인</p>
-                      <p className="text-sm mt-2 text-gray-400 font-medium px-6 text-center">라즈베리파이 스트리밍 주소가 올바르지 않거나<br/>네트워크 연결이 끊겼습니다.</p>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-500 bg-gray-900/60 backdrop-blur-md">
+                      <VideoOff size={64} className="mb-6 opacity-30 text-red-500" />
+                      <p className="font-black text-2xl text-gray-200">연결 오프라인</p>
+                      <p className="text-sm mt-3 text-gray-400 font-medium px-12 text-center leading-relaxed">
+                        {selectedCam.label} 장치와의 통신이 원활하지 않습니다.<br/>
+                        라즈베리파이 전원 및 ngrok 터널 상태를 확인하십시오.
+                      </p>
                       <button 
                         onClick={() => {
                           setCctvKey(Date.now());
-                          setIsCctvOnline(true);
+                          setOnlineStatus(selectedCamId, true);
                         }} 
-                        className="mt-8 px-8 py-3 bg-gray-800 border border-gray-700 rounded-2xl hover:bg-gray-700 text-white text-sm font-black transition-all active:scale-95 flex items-center gap-2 shadow-xl"
+                        className="mt-10 px-10 py-4 bg-white/10 border border-white/10 rounded-2xl hover:bg-white/20 text-white text-sm font-black transition-all active:scale-95 flex items-center gap-2 shadow-2xl backdrop-blur-xl"
                       >
-                        <RotateCcw size={16} /> 영상 재연결 시도
+                        <RotateCcw size={18} /> 시스템 재연결 시도
                       </button>
                     </div>
                   )}
 
-                  {/* LIVE 뱃지 (글래스모피즘 효과 적용) */}
-                  <div className="absolute top-6 left-6 bg-black/40 backdrop-blur-xl px-4 py-2 rounded-full flex items-center gap-2.5 border border-white/10 shadow-lg select-none">
-                    <span className={`w-2.5 h-2.5 rounded-full ${isCctvOnline && cctvUrl ? 'bg-red-500 animate-pulse shadow-[0_0_12px_rgba(239,68,68,0.8)]' : 'bg-gray-500'}`}></span>
-                    <span className="text-white text-[10px] font-black tracking-[0.2em] uppercase">LIVE CCTV</span>
+                  {/* LIVE 뱃지 (Focus Mode 특화 UI) */}
+                  <div className="absolute top-8 left-8 bg-black/50 backdrop-blur-2xl px-5 py-2.5 rounded-full flex items-center gap-3 border border-white/20 shadow-2xl select-none">
+                    <span className={`w-3 h-3 rounded-full ${cameraStatus[selectedCamId] !== false ? 'bg-red-500 animate-pulse shadow-[0_0_15px_rgba(239,68,68,1)]' : 'bg-gray-500'}`}></span>
+                    <span className="text-white text-[11px] font-black tracking-[0.3em] uppercase">LIVE STREAMING</span>
                   </div>
 
-                  {/* 스캔라인 효과 (실감나는 모니터 연출) */}
-                  <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.02),rgba(0,255,0,0.01),rgba(0,0,255,0.02))] bg-[length:100%_4px,3px_100%] opacity-20"></div>
+                  {/* 하단 정보 오버레이 */}
+                  <div className="absolute bottom-8 left-8 right-8 flex justify-between items-end pointer-events-none">
+                    <div className="bg-black/60 backdrop-blur-xl p-4 rounded-2xl border border-white/10 shadow-2xl">
+                      <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Active Channel</p>
+                      <h4 className="text-white text-lg font-black">{selectedCam.label} — {selectedCam.station_id}</h4>
+                    </div>
+                    <div className="text-white/30 font-mono text-[10px] tracking-tighter text-right">
+                      {new Date().toISOString()}<br/>
+                      ENCRYPTION: AES-256 SYNCED
+                    </div>
+                  </div>
+
+                  {/* 스캔라인 및 노이즈 효과 */}
+                  <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.1)_50%),linear-gradient(90deg,rgba(255,0,0,0.02),rgba(0,255,0,0.01),rgba(0,0,255,0.02))] bg-[length:100%_4px,3px_100%] opacity-30"></div>
                 </div>
               </div>
 
-              <div className="max-w-4xl mx-auto bg-blue-50 p-6 rounded-3xl border border-blue-100 flex items-start gap-4">
+              <div className="max-w-5xl mx-auto bg-blue-50 p-6 rounded-3xl border border-blue-100 flex items-start gap-4">
                 <div className="bg-white text-blue-600 p-3 rounded-2xl shrink-0 shadow-sm"><Wrench size={20} /></div>
                 <div className="pt-1">
-                  <p className="text-sm font-black text-blue-900 mb-2">도메인 설정 및 연동 안내</p>
+                  <p className="text-sm font-black text-blue-900 mb-2">집중 관제 모드 안내</p>
                   <p className="text-xs text-blue-700/80 leading-relaxed font-medium">
-                    1. 라즈베리파이에서 영상 스트리밍 서버를 구동합니다.<br/>
-                    2. 현재 코드 파일(<code className="bg-white px-1.5 py-0.5 rounded text-blue-600 mx-1 border border-blue-100">src/components/admin/AdminDashboard.tsx</code>)을 엽니다.<br/>
-                    3. <code className="bg-white px-1.5 py-0.5 rounded text-blue-600 mx-1 border border-blue-100">cctvUrl</code> 상태 변수의 빈 문자열 <code className="bg-white px-1.5 py-0.5 rounded text-blue-600 mx-1 border border-blue-100">""</code> 안에 라즈베리파이의 스트리밍 주소(예: <code className="bg-white px-1.5 py-0.5 rounded text-blue-600 mx-1 border border-blue-100">http://[IP]:[포트]/video_feed</code>)를 입력하고 저장하면 즉시 영상이 송출됩니다.
+                    1. 상단의 채널 버튼을 클릭하여 관제 대상을 즉시 변경할 수 있습니다.<br/>
+                    2. 현재 활성화된 채널 외의 스트리밍은 자동으로 차단되어 네트워크 자원을 절약합니다.<br/>
+                    3. 영상이 멈춘 경우 '재연결 시도' 버튼을 눌러 스트림 세션을 갱신하십시오.
                   </p>
                 </div>
               </div>
