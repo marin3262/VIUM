@@ -159,7 +159,7 @@ export function StationMap({ stations, onMarkerClick, onMapClick, isLoading }: S
           if (!isNaN(lat) && !isNaN(lng)) {
             const pos = new window.kakao.maps.LatLng(lat, lng);
             mapInstance.current.setCenter(pos);
-            mapInstance.current.setLevel(3);
+            mapInstance.current.setLevel(4);
           }
         }
       };

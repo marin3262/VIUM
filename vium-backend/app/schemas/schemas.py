@@ -17,7 +17,7 @@ class ReviewUpdate(BaseModel):
     content: Optional[str] = Field(None, min_length=5)
 
 class ReviewAdminUpdate(BaseModel):
-    status: str # 'VISIBLE' | 'HIDDEN' (관리자용 제어)
+    status: str 
 
 class Review(ReviewBase):
     id: int
@@ -38,9 +38,12 @@ class ChargerBase(BaseModel):
     charger_type: str
     connector_type: str
     status: str
+    active_user_id: Optional[int] = None
+    active_session_id: Optional[str] = None
+    last_used_at: Optional[datetime] = None
 
 class ChargerStatusUpdate(BaseModel):
-    status: str # 'Available' | 'Faulty' | 'Occupied' | 'Charging'
+    status: str 
 
 class Charger(ChargerBase):
     class Config:
@@ -74,7 +77,7 @@ class ReportCreate(BaseModel):
     content: str = Field(..., min_length=10)
 
 class ReportUpdate(BaseModel):
-    status: str # 'APPROVED' | 'REJECTED' (관리자용)
+    status: str 
 
 class Report(BaseModel):
     report_id: int
@@ -106,9 +109,18 @@ class ChargingSessionBase(BaseModel):
     total_price: int
     used_mileage: int
     final_amount: int
+    target_soc: int = 80
 
-class ChargingSessionCreate(ChargingSessionBase):
-    pass
+class ChargingSessionCreate(BaseModel):
+    station_id: str
+    charger_id: str
+    total_price: int
+    used_mileage: int
+    final_amount: int
+    target_soc: int = 80
+
+class ChargingCompleteRequest(BaseModel):
+    points: int
 
 class ChargingSessionConfirm(BaseModel):
     paymentKey: str
@@ -117,9 +129,13 @@ class ChargingSessionConfirm(BaseModel):
 
 class ChargingSession(ChargingSessionBase):
     session_id: int
-    user_id: int
+    user_id: Optional[int] = None 
     order_id: str
     payment_key: Optional[str] = None
+    is_guest: bool = False
+    is_start_notified: bool = False
+    is_80_notified: bool = False
+    is_completed_notified: bool = False
     status: str
     created_at: datetime
     paid_at: Optional[datetime] = None
@@ -130,24 +146,17 @@ class ChargingSession(ChargingSessionBase):
 # --- User Schemas ---
 class UserCreate(BaseModel):
     email: str = Field(..., example="user@example.com")
-    password: str = Field(
-        ..., 
-        min_length=8, 
-        description="비밀번호는 최소 8자 이상이어야 하며, 영문, 숫자, 특수문자를 각각 최소 하나 이상 포함해야 합니다."
-    )
+    password: str = Field(..., min_length=8)
     nickname: str = Field(..., min_length=2, max_length=20)
-    admin_code: Optional[str] = None # 관리자 가입용 시크릿 코드
+    admin_code: Optional[str] = None 
 
     @field_validator('password')
     @classmethod
     def validate_password_complexity(cls, v: str) -> str:
-        """비밀번호 복잡도 수동 검증: 영문, 숫자, 특수문자 포함 여부 확인"""
-        # Python의 re 모듈은 look-around를 완벽하게 지원합니다.
-        password_regex = r'^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$'
+        # 영문, 숫자, 특수문자(@$!%*#?&)를 포함한 8자 이상 (문자 제한 완화)
+        password_regex = r'^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&]).{8,}$'
         if not re.match(password_regex, v):
-            raise ValueError(
-                "비밀번호는 최소 8자 이상이어야 하며, 영문, 숫자, 특수문자를 각각 최소 하나 이상 포함해야 합니다."
-            )
+            raise ValueError("비밀번호는 영문, 숫자, 특수문자(@$!%*#?&)를 포함하여 8자 이상이어야 합니다.")
         return v
 
 class NicknameCheck(BaseModel):
@@ -169,9 +178,9 @@ class UserProfile(BaseModel):
     level: str
     trust_score: int
     mileage_logs: List[MileageLog] = []
-    reviews: List[Review] = [] # 내가 남긴 리뷰
-    reports: List[Report] = [] # 내가 보낸 제보
-    charging_sessions: List[ChargingSession] = [] # 나의 결제 내역
+    reviews: List[Review] = [] 
+    reports: List[Report] = [] 
+    charging_sessions: List[ChargingSession] = [] 
 
     class Config:
         from_attributes = True
@@ -198,28 +207,35 @@ class ActionResponse(BaseModel):
 
 # --- Routing (GPS) Schemas ---
 class RouteSummary(BaseModel):
-    distance: int # 미터
-    duration: int # 초
+    distance: int 
+    duration: int 
     origin: dict
     destination: dict
 
 class DirectionResponse(BaseModel):
     success: bool
-    path: List[List[float]] # [[lng, lat], ...]
+    path: List[List[float]] 
     summary: RouteSummary
 
-# --- Hardware Schemas (Added for IoT Integration) ---
+# --- Push Notification Schemas ---
+class PushSubscriptionCreate(BaseModel):
+    endpoint: str
+    p256dh: str
+    auth: str
+    session_id: Optional[str] = None 
+    silent: bool = False
+
+# --- Hardware Schemas ---
 class ConnectorSignal(BaseModel):
-    """아두이노(ESP32)로부터 수신하는 충전 커넥터 상태 데이터"""
     charger_id: str
-    status: str # 'CONNECTED' | 'DISCONNECTED'
+    status: str 
     voltage: Optional[float] = 0.0
     battery: Optional[float] = 0.0
+    user_id: Optional[int] = None 
     timestamp: Optional[datetime] = Field(default_factory=datetime.utcnow)
 
 class CameraSignal(BaseModel):
-    """라즈베리파이(OpenCV)로부터 수신하는 차량 점유 감지 데이터"""
-    parking_space_id: str # DB의 charger_id와 1:1 매핑됨
+    parking_space_id: str 
     vehicle_present: bool
     confidence_score: float = Field(..., ge=0.0, le=1.0)
     timestamp: Optional[datetime] = Field(default_factory=datetime.utcnow)

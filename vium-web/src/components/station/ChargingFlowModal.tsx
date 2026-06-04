@@ -1,14 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Zap, CheckCircle2, Coins, BatteryFull, Loader2, Car, ShieldAlert, Eye, Cable, Plug2, ArrowLeft, Lock } from 'lucide-react';
 import type { ChargingStation } from '../../types';
-import { useNotificationStore } from '../../store/notificationStore';
 import { useUserStore } from '../../store/userStore';
+import { useNotificationStore } from '../../store/notificationStore';
 import { stationService } from '../../services/stationService';
 import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
 
-/**
- * [사용자 전용 키] 토스페이먼츠 API 개별 연동 테스트 클라이언트 키 (API 버전: 2024-06-01)
- */
 const TOSS_CLIENT_KEY = "test_ck_DnyRpQWGrNlgeqqGLm5L3Kwv1M9E";
 
 interface ChargingFlowModalProps {
@@ -21,8 +18,8 @@ interface ChargingFlowModalProps {
 type FlowStep = 'CONNECTION_PROMPT' | 'SAFETY' | 'PLEDGE' | 'CHARGING' | 'BILLING' | 'WAITING_EXIT' | 'SUCCESS';
 
 export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, onClose, onComplete, initialStep = 'CONNECTION_PROMPT' }) => {
-  const { addNotification } = useNotificationStore();
   const { user, fetchUser } = useUserStore();
+  const { addNotification } = useNotificationStore();
   const [step, setStep] = useState<FlowStep>(initialStep);
   
   const [totalPrice, setTotalPrice] = useState(0);
@@ -35,18 +32,18 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
   const [exitTimer, setExitTimer] = useState(600);
   const [isConnectorDisconnected, setIsConnectorDisconnected] = useState(false);
   
+  const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
+  
   const isCompletedRef = useRef(false);
   const isConfirmingRef = useRef(false); 
   const targetChargerIdRef = useRef<string | null>(null);
 
-  // --- 리다이렉트 후 컨텍스트 복구 로직 ---
   useEffect(() => {
     if (initialStep === 'BILLING') {
       const savedContext = sessionStorage.getItem('vium_charging_context');
       if (savedContext) {
         try {
           const context = JSON.parse(savedContext);
-          console.log("🔄 [Recovery] Restoring charging context:", context);
           setTotalPrice(context.totalPrice);
           setUsedMileage(context.usedMileage);
           setCurrentSoc(context.currentSoc);
@@ -59,54 +56,86 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
     }
   }, [initialStep]);
 
-  // 결제 요청 함수
-  const handlePayment = async () => {
+  // 충전 시작 시 세션 선행 생성 (target_soc 알림을 위함)
+  const handleStartCharging = async () => {
     if (!station || !targetChargerIdRef.current) return;
+    
+    try {
+        console.log("⚡ [Charging] Pre-creating session for notifications...");
+        const response = await stationService.createPaymentSession({
+          station_id: station.station_id,
+          charger_id: targetChargerIdRef.current,
+          total_price: 0,
+          used_mileage: 0,
+          final_amount: 0,
+          target_soc: targetSoc
+        });
+
+        if (response.success && response.data) {
+            const orderId = response.data.order_id;
+            setActiveOrderId(orderId);
+            
+            // [복구]: 충전 시작 로컬 알림
+            addNotification({
+              id: `start-${orderId}`,
+              role: 'USER',
+              type: 'INFO',
+              title: '⚡ 충전 시작',
+              message: `${user?.nickname || '고객'}님, ${station.station_name}에서 충전이 시작되었습니다. 안전하게 충전해 드릴게요!`
+            });
+
+            setStep('CHARGING');
+        }
+    } catch (e) {
+        console.error("Failed to pre-create session", e);
+        setStep('CHARGING'); // 실패해도 일단 진행 (UI 시뮬레이션 우선)
+    }
+  };
+
+  const handlePayment = async () => {
+    if (!station || !targetChargerIdRef.current || !activeOrderId) return;
     setIsProcessingPayment(true);
     try {
-      console.log("💳 [Payment] Starting payment session...");
       const finalAmount = totalPrice - usedMileage;
-      const response = await stationService.createPaymentSession({
+      
+      // 기존 세션 정보 업데이트 (금액 확정)
+      await stationService.updatePaymentSession(activeOrderId, {
         station_id: station.station_id,
         charger_id: targetChargerIdRef.current,
         total_price: totalPrice,
         used_mileage: usedMileage,
-        final_amount: finalAmount
+        final_amount: finalAmount,
+        target_soc: targetSoc
       });
 
-      if (response.success && response.data) {
-        console.log("💳 [Payment] Session created. Initializing Toss v2...");
-        const tossPayments = await loadTossPayments(TOSS_CLIENT_KEY);
-        const customerKey = user 
-          ? `USER_${user.user_id}_${Date.now()}`.replace(/[^a-zA-Z0-9-_]/g, '')
-          : `GUEST_${Math.random().toString(36).substring(2, 12)}`;
-        
-        const payment = tossPayments.payment({ customerKey });
+      const tossPayments = await loadTossPayments(TOSS_CLIENT_KEY);
+      const customerKey = user 
+        ? `USER_${user.user_id}_${Date.now()}`.replace(/[^a-zA-Z0-9-_]/g, '')
+        : `GUEST_${Math.random().toString(36).substring(2, 12)}`;
+      
+      const payment = tossPayments.payment({ customerKey });
 
-        sessionStorage.setItem('vium_last_charging_id', station.station_id);
-        sessionStorage.setItem('vium_charging_context', JSON.stringify({
-          totalPrice, usedMileage, currentSoc, targetSoc
-        }));
-        
-        await payment.requestPayment({
-          method: "CARD", 
-          amount: { currency: "KRW", value: finalAmount },
-          orderId: response.data.order_id,
-          orderName: `VIUM ${station.station_name} 충전 요금`,
-          successUrl: window.location.origin + window.location.pathname + "?payment_success=true",
-          failUrl: window.location.origin + window.location.pathname + "?payment_fail=true",
-          customerEmail: user?.email || "",
-          customerName: user?.nickname || "VIUM 유저",
-        });
-      }
+      sessionStorage.setItem('vium_last_charging_id', station.station_id);
+      sessionStorage.setItem('vium_charging_context', JSON.stringify({
+        totalPrice, usedMileage, currentSoc, targetSoc
+      }));
+      
+      await payment.requestPayment({
+        method: "CARD", 
+        amount: { currency: "KRW", value: finalAmount },
+        orderId: activeOrderId,
+        orderName: `VIUM ${station.station_name} 충전 요금`,
+        successUrl: window.location.origin + window.location.pathname + "?payment_success=true",
+        failUrl: window.location.origin + window.location.pathname + "?payment_fail=true",
+        customerEmail: user?.email || "",
+        customerName: user?.nickname || "VIUM 유저",
+      });
     } catch (error: any) {
-      console.error("❌ Payment Request Error:", error);
-      addNotification({ role: 'USER', type: 'ERROR', title: '결제 요청 실패', message: error.message });
+      console.error("Payment Request Error:", error);
       setIsProcessingPayment(false);
     }
   };
 
-  // 결제 승인 감지 및 중복 방지 (Idempotent Guard)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const orderId = params.get('orderId');
@@ -124,7 +153,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
       (async () => {
         setIsProcessingPayment(true);
         try {
-          console.log("💳 [Payment] Payment window success. Confirming with backend...");
           const response = await stationService.confirmPayment({
             paymentKey: params.get('paymentKey')!,
             orderId: orderId,
@@ -132,27 +160,29 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
           });
           
           if (response.success) {
+            // [복구]: 결제 승인 완료 로컬 알림
+            addNotification({
+              id: `paid-${orderId}`,
+              role: 'USER',
+              type: 'SUCCESS',
+              title: '💳 결제 및 충전 승인 완료',
+              message: '안전하게 충전이 완료되었습니다. 이용해 주셔서 감사합니다!'
+            });
+
             sessionStorage.setItem(processedKey, 'true'); 
-            addNotification({ role: 'USER', type: 'SUCCESS', title: '결제 완료 💳', message: '이용 요금 정산이 완료되었습니다.' });
             if (fetchUser) await fetchUser(); 
             setStep('WAITING_EXIT');
             window.history.replaceState({}, '', window.location.pathname);
             sessionStorage.removeItem('vium_charging_context');
           } else throw new Error(response.error);
         } catch (error: any) {
-          console.error("❌ Payment Confirm Error:", error);
-          if (error.message?.includes("이미 처리")) {
-            setStep('WAITING_EXIT');
-          } else {
-            addNotification({ role: 'USER', type: 'ERROR', title: '승인 오류 ❌', message: error.message || "처리 실패" });
-            setStep('BILLING');
-          }
+          console.error("Payment Confirm Error:", error);
+          setStep('BILLING');
         } finally { setIsProcessingPayment(false); }
       })();
     }
-  }, [addNotification, fetchUser]);
+  }, [fetchUser]);
 
-  // 배터리 잔량 실시간 동기화
   useEffect(() => {
     if (step === 'CHARGING' || step === 'BILLING' || step === 'WAITING_EXIT' || step === 'SUCCESS') return;
     if (station?.current_battery !== undefined && station.current_battery !== null) {
@@ -211,7 +241,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
     return { total, bonus, type, label, desc };
   })();
 
-  const handleChargingComplete = () => {
+  const triggerStepChangeToBilling = () => {
     const chargedPercent = targetSoc - currentSoc;
     setTotalPrice(Math.max(0, chargedPercent * 200));
     setStep('BILLING');
@@ -237,9 +267,22 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
   useEffect(() => {
     if (step === 'CHARGING' && progress >= targetSoc && !isCompletedRef.current) {
       isCompletedRef.current = true;
-      handleChargingComplete();
+      
+      // [신규]: 통합 알림 브릿지 가동
+      // 프론트엔드 시뮬레이션이 끝나는 즉시 백엔드와 동일한 규격의 알림을 로컬 스토어에 추가합니다.
+      // 이렇게 하면 백엔드 푸시가 지연되더라도 사용자는 즉시 '✅' 알림을 받게 되며,
+      // 추후 도착하는 실제 푸시 알림은 tag(ID) 기반 중복 방지 로직에 의해 자동으로 걸러집니다.
+      addNotification({
+        id: activeOrderId ? `done-${activeOrderId}` : undefined,
+        role: 'USER',
+        type: 'SUCCESS',
+        title: `✅ 목표 충전(${targetSoc}%) 도달`,
+        message: `${user?.nickname || '고객'}님, 설정하신 ${targetSoc}% 충전이 완료되었습니다. 결제 후 안전하게 출차해 주세요.`
+      });
+
+      triggerStepChangeToBilling();
     }
-  }, [progress, targetSoc, step]);
+  }, [progress, targetSoc, step, user, activeOrderId, addNotification]);
 
   useEffect(() => {
     let interval: any;
@@ -247,15 +290,33 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
       interval = setInterval(() => setExitTimer(prev => (prev > 0 ? prev - 1 : 0)), 1000);
       if (station && targetChargerIdRef.current) {
         const targetCharger = station.chargers.find(c => c.charger_id === targetChargerIdRef.current);
-        if (targetCharger?.status === 'Available') setStep('SUCCESS');
+        
+        if (targetCharger?.status === 'Available') {
+          setStep('SUCCESS');
+          // [복구]: 출차 완료 로컬 알림
+          addNotification({
+            id: activeOrderId ? `exit-${activeOrderId}` : undefined,
+            role: 'USER',
+            type: 'SUCCESS',
+            title: '🚗 출차 확인 완료',
+            message: `${user?.nickname || '고객'}님, 안전하게 출차되었습니다. 오늘도 즐거운 드라이빙 되세요!`
+          });
+        }
         else if (targetCharger?.status === 'Occupied' && !isConnectorDisconnected) {
           setIsConnectorDisconnected(true);
-          addNotification({ role: 'USER', type: 'INFO', title: '커넥터 분리 확인 🔌', message: '커넥터가 분리되었습니다.' });
+          // [복구]: 커넥터 분리 로컬 알림
+          addNotification({
+            id: activeOrderId ? `disconnect-${activeOrderId}` : undefined,
+            role: 'USER',
+            type: 'INFO',
+            title: '🔌 커넥터 분리 확인',
+            message: `${user?.nickname || '고객'}님, 커넥터가 안전하게 분리되었습니다. 이제 출차해 주세요.`
+          });
         }
       }
     }
     return () => clearInterval(interval);
-  }, [step, station, isConnectorDisconnected, addNotification]);
+  }, [step, station, isConnectorDisconnected, addNotification, user, activeOrderId]);
 
   if (!station) return null;
 
@@ -274,7 +335,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
 
         {step === 'CONNECTION_PROMPT' && (
           <div className="p-8 pt-4 flex flex-col items-center justify-center space-y-6 animate-in slide-in-from-bottom-5 duration-500">
-            <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center animate-pulse"><Cable className="text-blue-600" size={48} /></div>
+            <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mx-auto animate-pulse"><Cable className="text-blue-600" size={48} /></div>
             <div className="text-center space-y-2">
               <h3 className="text-2xl font-black text-gray-900 leading-tight">충전기 연결 감지</h3>
               <p className="text-sm text-gray-500 font-medium break-keep">차량과 충전기가 성공적으로 연결되었습니다.<br />충전을 시작하시겠습니까?</p>
@@ -350,15 +411,18 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
               <p className="text-[10px] leading-relaxed font-bold text-gray-500">{reward.desc}</p>
             </div>
 
-            <button onClick={() => setStep('CHARGING')} className="w-full bg-blue-600 text-white py-5 rounded-3xl text-lg font-black shadow-xl active:scale-95 transition-all">충전 시작하기</button>
+            <button onClick={handleStartCharging} className="w-full bg-blue-600 text-white py-5 rounded-3xl text-lg font-black shadow-xl active:scale-95 transition-all">충전 시작하기</button>
           </div>
         )}
 
         {step === 'CHARGING' && (
           <div className="p-10 pt-4 flex flex-col items-center text-center space-y-8 animate-in zoom-in duration-500">
             <div className="relative w-48 h-48">
-              <svg className="w-full h-full"><circle cx="96" cy="96" r="88" stroke="#F3F4F6" strokeWidth="12" fill="transparent" /><circle cx="96" cy="96" r="88" stroke={targetSoc === 100 ? "#1F2937" : targetSoc === 80 ? "#10B981" : "#3B82F6"} strokeWidth="12" fill="transparent" strokeDasharray={552.92} strokeDashoffset={552.92 - (552.92 * progress) / 100} strokeLinecap="round" transform="rotate(-90 96 96)" className="transition-all duration-100 ease-linear" /></svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center"><Zap size={36} className={`${targetSoc === 100 ? 'text-gray-800' : 'text-blue-600'} mb-2 animate-pulse`} fill="currentColor" /><span className="text-5xl font-black text-gray-900 tracking-tighter">{Math.floor(progress)}%</span></div>
+              <svg className="w-full h-full transform -rotate-90">
+                <circle cx="96" cy="96" r="88" className="stroke-gray-100" strokeWidth="16" fill="none" />
+                <circle cx="96" cy="96" r="88" className="stroke-blue-500 transition-all duration-300 ease-out" strokeWidth="16" fill="none" strokeDasharray="552.92" strokeDashoffset={552.92 * (1 - progress / 100)} strokeLinecap="round" />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center"><Zap size={36} className={` ${targetSoc === 100 ? 'text-gray-800' : 'text-blue-600'} mb-2 animate-pulse`} fill="currentColor" /><span className="text-5xl font-black text-gray-900 tracking-tighter">{Math.floor(progress)}%</span></div>
             </div>
             <h3 className="text-xl font-black text-gray-900 italic uppercase">Charging to {targetSoc}%</h3>
           </div>
@@ -417,7 +481,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
               <div className={`absolute inset-0 rounded-full animate-ping opacity-20 ${isConnectorDisconnected ? 'bg-green-400' : 'bg-blue-400'}`}></div>
             </div>
             <div className="space-y-2">
-              <h3 className="text-2xl font-black text-gray-900 italic uppercase">{isConnectorDisconnected ? 'Waiting for Exit' : 'Disconnect Connector'}</h3>
+              <h3 className="text-2xl font-black text-gray-900 italic uppercase">{isConnectorDisconnected ? '출차 대기 중' : '커넥터 분리 안내'}</h3>
               <p className="text-sm text-gray-400 leading-relaxed">
                 {isConnectorDisconnected ? '커넥터 분리가 확인되었습니다. 출차해 주세요.' : '차량에서 커넥터를 분리해 주세요.'}
               </p>
@@ -436,7 +500,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
             
             <div className="w-full bg-gray-50 rounded-3xl p-6 border border-gray-100 space-y-4">
               <div className="flex justify-between items-center text-xs font-bold text-gray-500 uppercase tracking-tighter">
-                <span>Total Rewards Earned</span>
+                <span>총 획득 보상</span>
                 <Coins size={14} className="text-blue-500" />
               </div>
               <div className="flex justify-between items-center">

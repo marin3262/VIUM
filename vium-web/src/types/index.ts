@@ -22,6 +22,9 @@ export interface Charger {
   charger_type: ChargerType;
   connector_type: string;
   status: StationStatus;
+  active_user_id?: number;
+  active_session_id?: string;
+  last_used_at?: string;
 }
 
 export interface ChargingStation {

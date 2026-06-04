@@ -5,7 +5,6 @@ import uvicorn
 import os
 
 from app.db.session import engine, Base
-from app.api.v1 import endpoints
 
 # 데이터베이스 테이블 생성
 Base.metadata.create_all(bind=engine)
@@ -16,13 +15,24 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS 설정: 모든 도메인 허용 (테스트 및 ngrok 연동용)
+# CORS 설정: 명시적인 Origins 리스트 관리
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "http://211.253.31.143",
+    "https://vium-project.duckdns.org",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # 정적 파일 서빙 설정 (사진 업로드용)

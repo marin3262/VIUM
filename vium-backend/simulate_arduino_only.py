@@ -16,8 +16,20 @@ def simulate_arduino_connect():
     requests.post(f"{BASE_URL}/cameras", json=cam_data)
     time.sleep(2)
     
-    print(f"👉 2. ⚡ 아두이노 커넥터 연결 신호를 보냅니다. (웹 화면을 확인하세요!)")
+    # 사용자 ID 입력
+    try:
+        user_input = input("\n👤 타겟 유저 ID를 입력하세요 (전체 방송은 엔터): ").strip()
+        user_id = int(user_input) if user_input else None
+    except ValueError:
+        print("올바른 숫자가 아닙니다. 전체 방송 모드로 진행합니다.")
+        user_id = None
+
+    print(f"\n👉 2. ⚡ 아두이노 커넥터 연결 신호를 보냅니다. (웹 화면을 확인하세요!)")
     connector_data = {"charger_id": TARGET_ID, "status": "CONNECTED", "voltage": 3.8, "battery": 78.5}
+    if user_id:
+        connector_data["user_id"] = user_id
+        print(f"🎯 Target User ID: {user_id}")
+
     try:
         response = requests.post(f"{BASE_URL}/connectors", json=connector_data)
         if response.status_code == 200:

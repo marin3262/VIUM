@@ -1,5 +1,6 @@
 import os
 import redis
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -46,21 +47,33 @@ def get_station_slots(station_id: str, default_val: int):
         print(f"⚠️ Failed to get slots from Redis: {e}")
         return default_val
 
-def update_station_battery(station_id: str, battery_level: float):
-    """특정 충전소에서 현재 충전 중인 차량의 배터리 잔량을 기록합니다."""
+def update_station_battery(station_id: str, battery_level: float, active_user_id: int = None):
+    """특정 충전소에서 현재 충전 중인 차량의 배터리 잔량과 활성 사용자 ID를 기록합니다."""
     try:
         key = f"station:{station_id}:battery"
+        data = {
+            "battery_level": battery_level,
+            "active_user_id": active_user_id
+        }
         # 10분 동안 업데이트가 없으면 데이터 삭제 (TTL 설정)
-        redis_client.setex(key, 600, battery_level)
+        redis_client.setex(key, 600, json.dumps(data))
     except Exception as e:
         print(f"⚠️ Failed to update Redis battery: {e}")
 
 def get_station_battery(station_id: str):
-    """Redis에서 특정 충전소의 실시간 배터리 잔량을 가져옵니다."""
+    """Redis에서 특정 충전소의 실시간 배터리 잔량과 활성 사용자 ID를 가져옵니다."""
     try:
         key = f"station:{station_id}:battery"
         val = redis_client.get(key)
-        return float(val) if val is not None else None
+        if val:
+            # 하위 호환성을 위해 JSON 파싱 시도
+            try:
+                data = json.loads(val)
+                return data.get("battery_level"), data.get("active_user_id")
+            except json.JSONDecodeError:
+                # 과거의 단순 float 데이터인 경우
+                return float(val), None
+        return None, None
     except Exception as e:
         print(f"⚠️ Failed to get battery from Redis: {e}")
-        return None
+        return None, None

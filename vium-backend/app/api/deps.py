@@ -1,4 +1,4 @@
-from typing import Generator
+from typing import Generator, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -8,6 +8,7 @@ from ..models import models
 from ..core import security
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login", auto_error=False)
 
 def get_current_user(
     db: Session = Depends(get_db), 
@@ -33,6 +34,25 @@ def get_current_user(
         raise credentials_exception
     return user
 
+def get_current_user_optional(
+    db: Session = Depends(get_db), 
+    token: Optional[str] = Depends(oauth2_scheme_optional)
+) -> Optional[models.User]:
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(
+            token, security.SECRET_KEY, algorithms=[security.ALGORITHM]
+        )
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            return None
+    except JWTError:
+        return None
+        
+    user = db.query(models.User).filter(models.User.user_id == int(user_id)).first()
+    return user
+
 def get_current_admin_user(
     current_user: models.User = Depends(get_current_user)
 ) -> models.User:
@@ -43,3 +63,4 @@ def get_current_admin_user(
             detail="관리자 권한이 필요합니다."
         )
     return current_user
+

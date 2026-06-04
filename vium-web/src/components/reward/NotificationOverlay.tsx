@@ -16,6 +16,16 @@ export const NotificationOverlay: React.FC<NotificationOverlayProps> = ({ isAdmi
     .filter(n => n.role === currentRole && !n.isRead)
     .slice(0, 3);
 
+  // [신규]: 알림 자동 숨김 로직 (5초 후 읽음 처리)
+  React.useEffect(() => {
+    if (unreadNotis.length > 0) {
+      const timers = unreadNotis.map(noti => 
+        setTimeout(() => markAsRead(noti.id), 5000)
+      );
+      return () => timers.forEach(t => clearTimeout(t));
+    }
+  }, [unreadNotis, markAsRead]);
+
   if (unreadNotis.length === 0) return null;
 
   return (

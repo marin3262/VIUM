@@ -11,7 +11,9 @@ import { stationService } from '../../services/stationService';
 import { useNotificationStore } from '../../store/notificationStore';
 import type { Review } from '../../types';
 
-const SERVER_ROOT = 'http://localhost:8000'; // 이미지 호스팅 서버 주소
+// 환경 자동 감지 로직 추가
+const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const SERVER_ROOT = isLocalhost ? 'http://localhost:8000' : 'https://vium-project.duckdns.org'; // 이미지 호스팅 서버 주소 자동 전환
 
 export const AdminDashboard: React.FC = () => {
   const { stations, fetchStations } = useStationStore();
@@ -39,6 +41,12 @@ export const AdminDashboard: React.FC = () => {
 
   const setOnlineStatus = (id: number, status: boolean) => {
     setCameraStatus(prev => ({ ...prev, [id]: status }));
+  };
+
+  // 이미지 로딩 실패 시 처리 로직
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+    e.currentTarget.src = 'https://via.placeholder.com/400x400?text=Image+Not+Found';
+    e.currentTarget.className = "w-32 h-32 object-cover rounded-2xl border border-gray-200 opacity-40 grayscale";
   };
 
   const loadAdminData = async () => {
@@ -167,7 +175,15 @@ export const AdminDashboard: React.FC = () => {
       {selectedImage && (
         <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4 animate-in zoom-in duration-300" onClick={() => setSelectedImage(null)}>
           <div className="relative max-w-4xl w-full max-h-[90vh] flex items-center justify-center">
-            <img src={`${SERVER_ROOT}${selectedImage}`} alt="Full Report Proof" className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl" />
+            <img 
+              src={`${SERVER_ROOT}${selectedImage}`} 
+              alt="Full Report Proof" 
+              className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl" 
+              onError={(e) => {
+                e.currentTarget.src = 'https://via.placeholder.com/800x800?text=Image+Not+Found';
+                e.currentTarget.className = "max-w-full max-h-full object-contain rounded-2xl shadow-2xl opacity-50 grayscale";
+              }}
+            />
             <button className="absolute -top-12 right-0 text-white flex items-center gap-2 font-black text-sm hover:text-red-400 transition-colors">
               <X size={24} /> 닫기
             </button>
@@ -333,6 +349,7 @@ export const AdminDashboard: React.FC = () => {
                           alt="Report Proof" 
                           className="w-32 h-32 object-cover rounded-2xl border border-gray-100 cursor-pointer shadow-sm group-hover:scale-105 transition-transform"
                           onClick={() => setSelectedImage(report.image_url)}
+                          onError={handleImageError}
                         />
                         <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 rounded-2xl flex items-center justify-center pointer-events-none transition-opacity">
                           <ImageIcon className="text-white" size={20} />

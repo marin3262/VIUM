@@ -5,16 +5,38 @@ import {
 } from 'lucide-react';
 import type { ChargingStation, StationStatus } from '../../types';
 import { useStationStore } from '../../store/stationStore';
+import { useUserStore } from '../../store/userStore';
 import { getConnectorName } from '../../types/constants';
 
 interface StationModalProps {
   station: ChargingStation | null;
   onClose: () => void;
-  onShowOnMap: () => void; // 신규: 지도에서 확인하기 액션
+  onShowOnMap: () => void; 
+  onReport?: () => void; // 신규: 제보하기 액션
 }
+
+const formatRelativeTime = (dateString?: string) => {
+  if (!dateString) return "점검 완료";
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  
+  if (diffInSeconds < 60) return "방금 전";
+  
+  const diffInMinutes = Math.floor(diffInSeconds / 60);
+  if (diffInMinutes < 60) return `${diffInMinutes}분 전`;
+  
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) return `${diffInHours}시간 전`;
+  
+  const diffInDays = Math.floor(diffInHours / 24);
+  return `${diffInDays}일 전`;
+};
 
 export const StationModal: React.FC<StationModalProps> = ({ station, onClose, onShowOnMap }) => {
   if (!station) return null;
+
+  const { isAuthenticated } = useUserStore();
 
   const { 
     getAvailableSlots, 
@@ -195,7 +217,14 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
                     
                     <div className="space-y-1">
                       <p className="text-[10px] font-bold text-gray-500">{c.charger_type} • {getConnectorName(c.connector_type)}</p>
-                      <p className={`text-xs font-black ${config.color}`}>{config.label}</p>
+                      <div className="flex justify-between items-center">
+                        <p className={`text-xs font-black ${config.color}`}>{config.label}</p>
+                        {c.last_used_at && (
+                          <span className="text-[9px] font-bold text-gray-400 px-1.5 py-0.5 bg-gray-100/50 rounded-md">
+                            최근: {formatRelativeTime(c.last_used_at)}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -295,6 +324,12 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
 
             <button 
               onClick={() => {
+                if (!isAuthenticated) {
+                  if ((window as any).openAuthModal) {
+                    (window as any).openAuthModal();
+                  }
+                  return;
+                }
                 if ((window as any).openReportModal) {
                   (window as any).openReportModal(station.station_id);
                 }

@@ -2,11 +2,9 @@ import type { ChargingStation, Review } from '../types';
 import { apiClient } from './apiClient';
 import type { ApiResponse } from './apiClient';
 
-const BASE_URL = 'http://localhost:8000/api/v1';
+const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const BASE_URL = isLocalhost ? 'http://localhost:8000/api/v1' : 'https://vium-project.duckdns.org/api/v1';
 
-/**
- * 충전소 관련 데이터 통신을 전담하는 서비스입니다.
- */
 export const stationService = {
   getStations: async (): Promise<ApiResponse<ChargingStation[]>> => {
     return await apiClient.get<ChargingStation[]>('/stations');
@@ -20,27 +18,21 @@ export const stationService = {
     stationId: string, 
     review: Omit<Review, 'id' | 'created_at' | 'updated_at' | 'user_name' | 'status'>
   ): Promise<ApiResponse<any>> => {
-    return await apiClient.post<any>(`/stations/${stationId}/reviews`, review);
+    return await apiClient.post<any>('/stations/' + stationId + '/reviews', review);
   },
 
   updateReview: async (reviewId: number, rating: number, content: string): Promise<ApiResponse<any>> => {
-    return await apiClient.patch<any>(`/reviews/${reviewId}`, { rating, content });
+    return await apiClient.patch<any>('/reviews/' + reviewId, { rating, content });
   },
 
   deleteReview: async (reviewId: number): Promise<ApiResponse<any>> => {
     return await apiClient.delete<any>(`/reviews/${reviewId}`);
   },
 
-  /**
-   * 관리자 전용: 전체 리뷰(숨김 포함) 조회
-   */
   getAllReviews: async (): Promise<ApiResponse<Review[]>> => {
     return await apiClient.get<Review[]>('/admin/reviews');
   },
 
-  /**
-   * 관리자 전용: 리뷰 상태(숨김/노출) 변경
-   */
   updateReviewStatus: async (reviewId: number, status: 'VISIBLE' | 'HIDDEN'): Promise<ApiResponse<any>> => {
     return await apiClient.patch<any>(`/admin/reviews/${reviewId}/status`, { status });
   },
@@ -55,10 +47,7 @@ export const stationService = {
     formData.append('charger_id', reportData.charger_id);
     formData.append('keyword', reportData.keyword);
     formData.append('content', reportData.content);
-    if (reportData.image) {
-      formData.append('image', reportData.image);
-    }
-    
+    if (reportData.image) formData.append('image', reportData.image);
     return await apiClient.postMultipart<any>('/reports', formData);
   },
 
@@ -74,8 +63,8 @@ export const stationService = {
     return await apiClient.patch<any>(`/chargers/${chargerId}/status`, { status });
   },
 
-  completeCharging: async (stationId: string): Promise<ApiResponse<any>> => {
-    return await apiClient.post<any>(`/stations/${stationId}/complete-charging`, {});
+  completeCharging: async (stationId: string, points: number): Promise<ApiResponse<any>> => {
+    return await apiClient.post<any>(`/stations/${stationId}/complete-charging`, { points });
   },
 
   withdrawAccount: async (): Promise<ApiResponse<any>> => {
@@ -86,15 +75,25 @@ export const stationService = {
     return await apiClient.get<any>(`/directions?origin=${origin}&destination=${destination}`);
   },
 
-  // --- Payment Services ---
   createPaymentSession: async (paymentData: {
     station_id: string;
     charger_id: string;
     total_price: number;
     used_mileage: number;
-    final_amount: number;
+    final_amount: number; target_soc?: number;
   }): Promise<ApiResponse<any>> => {
     return await apiClient.post<any>('/payments/create-session', paymentData);
+  },
+
+  updatePaymentSession: async (orderId: string, paymentData: {
+    station_id: string;
+    charger_id: string;
+    total_price: number;
+    used_mileage: number;
+    final_amount: number;
+    target_soc?: number;
+  }): Promise<ApiResponse<any>> => {
+    return await apiClient.patch<any>(`/payments/sessions/${orderId}`, paymentData);
   },
 
   confirmPayment: async (confirmData: {
@@ -105,7 +104,6 @@ export const stationService = {
     return await apiClient.post<any>('/payments/confirm', confirmData);
   },
 
-  // --- Auth Services ---
   sendVerificationEmail: async (email: string): Promise<ApiResponse<any>> => {
     return await apiClient.post<any>('/auth/send-verification', { email });
   },
@@ -123,9 +121,8 @@ export const stationService = {
   },
 
   login: async (credentials: FormData): Promise<ApiResponse<any>> => {
-    // OAuth2PasswordBearer는 x-www-form-urlencoded 형식을 기대함
     try {
-      const response = await fetch(`${BASE_URL}/auth/login`, {
+      const response = await fetch(BASE_URL + '/auth/login', {
         method: 'POST',
         body: credentials,
       });

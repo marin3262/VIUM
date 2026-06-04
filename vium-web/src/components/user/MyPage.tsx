@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { 
   Coins, ShieldCheck, 
-  LogOut, Trash2, Clock, CheckCircle2, XCircle, Edit3
+  LogOut, Trash2, Clock, CheckCircle2, XCircle, Edit3, BellRing, Loader2, BellOff
 } from 'lucide-react';
 import { useUserStore } from '../../store/userStore';
+import { usePushNotification } from '../../hooks/usePushNotification';
 import { ReviewModal } from '../station/ReviewModal';
 import type { Review } from '../../types';
 
@@ -17,6 +18,8 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
   const { user, withdrawAccount, logout, isLoading, deleteReview } = useUserStore();
   const [activeTab, setActiveTab] = useState<TabType>('MILEAGE');
   const [editingReview, setEditingReview] = useState<Review | null>(null);
+
+  const { subscribe, unsubscribe, isSubscribing, isPushEnabled } = usePushNotification();
 
   const handleWithdrawal = async () => {
     if (window.confirm('정말로 탈퇴하시겠습니까? 모든 활동 내역과 마일리지가 영구 삭제됩니다.')) {
@@ -38,6 +41,16 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
       } else {
         alert(result.error || '삭제 처리 중 오류가 발생했습니다.');
       }
+    }
+  };
+
+  const handlePushToggle = async () => {
+    if (isPushEnabled) {
+      if (window.confirm('알림 구독을 해지하시겠습니까?')) {
+        await unsubscribe();
+      }
+    } else {
+      await subscribe();
     }
   };
 
@@ -218,17 +231,35 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
         </div>
 
         {/* Footer Settings */}
-        <div className="p-6 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row gap-3 md:rounded-b-[40px]">
-          <button 
-            onClick={() => { logout(); onClose(); }}
-            className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-white border border-gray-200 text-gray-600 rounded-2xl text-xs font-black hover:bg-gray-100 transition-all active:scale-95"
-          >
-            <LogOut size={16} /> 로그아웃
-          </button>
+        <div className="p-6 bg-gray-50 border-t border-gray-100 flex flex-col gap-3 md:rounded-b-[40px]">
+          
+          <div className="flex gap-3">
+            <button 
+              onClick={handlePushToggle}
+              disabled={isSubscribing}
+              className={`flex-[2] flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black transition-all active:scale-95 ${
+                isPushEnabled
+                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100'
+                  : 'bg-white border border-gray-200 text-blue-600 hover:bg-blue-50'
+              }`}
+            >
+              {isSubscribing ? <Loader2 size={16} className="animate-spin" /> : 
+               (isPushEnabled ? <BellRing size={16} /> : <BellOff size={16} />)}
+              {isPushEnabled ? '실시간 알림 ON' : '실시간 알림 OFF'}
+            </button>
+
+            <button 
+              onClick={() => { logout(); onClose(); }}
+              className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-white border border-gray-200 text-gray-600 rounded-2xl text-xs font-black hover:bg-gray-100 transition-all active:scale-95"
+            >
+              <LogOut size={16} /> 로그아웃
+            </button>
+          </div>
+
           <button 
             onClick={handleWithdrawal}
             disabled={isLoading}
-            className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-red-50 text-red-500 rounded-2xl text-xs font-black hover:bg-red-100 transition-all active:scale-95 disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-2 py-3.5 bg-red-50 text-red-500 rounded-2xl text-xs font-black hover:bg-red-100 transition-all active:scale-95 disabled:opacity-50"
           >
             <Trash2 size={16} /> 회원 탈퇴
           </button>

@@ -26,6 +26,7 @@ class User(Base):
     reports = relationship("Report", back_populates="user", cascade="all, delete-orphan")
     mileage_logs = relationship("MileageLog", back_populates="user", order_by="desc(MileageLog.created_at)", cascade="all, delete-orphan")
     charging_sessions = relationship("ChargingSession", back_populates="user", cascade="all, delete-orphan")
+    push_subscriptions = relationship("PushSubscription", back_populates="user", cascade="all, delete-orphan")
 
 class Station(Base):
     __tablename__ = "stations"
@@ -52,6 +53,9 @@ class Charger(Base):
     charger_type = Column(String(20)) 
     connector_type = Column(String(50)) 
     status = Column(String(20), default="Available") 
+    active_user_id = Column(Integer, nullable=True)
+    active_session_id = Column(String(100), nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
 
     station = relationship("Station", back_populates="chargers")
     reports = relationship("Report", back_populates="charger")
@@ -60,16 +64,22 @@ class Charger(Base):
 class ChargingSession(Base):
     __tablename__ = "charging_sessions"
     session_id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.user_id"))
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=True)
     station_id = Column(String(50), ForeignKey("stations.station_id"))
     charger_id = Column(String(50), ForeignKey("chargers.charger_id"))
     
     total_price = Column(Integer, nullable=False) # 마일리지 적용 전 원본 요금
     used_mileage = Column(Integer, default=0) # 사용한 마일리지
     final_amount = Column(Integer, nullable=False) # 실제 카드 결제 금액
+    target_soc = Column(Integer, default=80)
     
     order_id = Column(String(100), unique=True, nullable=False) # 토스 주문 고유 번호
     payment_key = Column(String(255), nullable=True) # 토스 결제 승인 키
+    
+    is_guest = Column(Boolean, default=False)
+    is_start_notified = Column(Boolean, default=False)
+    is_80_notified = Column(Boolean, default=False)
+    is_completed_notified = Column(Boolean, default=False)
     
     # 상태: PENDING (결제 대기), PAID (결제 완료), FAILED (결제 실패), CANCELED (취소)
     status = Column(String(20), default="PENDING")
@@ -88,7 +98,6 @@ class Report(Base):
     keyword = Column(String(50))
     content = Column(String(1000))
     image_url = Column(String(255))
-    # 변경: is_verified (Boolean) -> status (String)
     # 상태: PENDING (대기), APPROVED (승인), REJECTED (반려)
     status = Column(String(20), default="PENDING")
     created_at = Column(DateTime, default=get_kst_now)
@@ -116,7 +125,6 @@ class Review(Base):
     user_name = Column(String(100))
     rating = Column(Integer)
     content = Column(String(1000))
-    # 신규: 리뷰 노출 제어 (Soft Delete)
     # 상태: VISIBLE (정상 노출), HIDDEN (관리자 숨김), DELETED (사용자 삭제)
     status = Column(String(20), default="VISIBLE")
     created_at = Column(DateTime, default=get_kst_now)
@@ -124,3 +132,14 @@ class Review(Base):
 
     station = relationship("Station", back_populates="reviews")
     user = relationship("User", back_populates="reviews")
+
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.user_id"), nullable=True)
+    session_id = Column(String(100), nullable=True)
+    endpoint = Column(String(500), nullable=False, unique=True)
+    p256dh = Column(String(100), nullable=False)
+    auth = Column(String(50), nullable=False)
+    created_at = Column(DateTime, default=get_kst_now)
+    user = relationship("User", back_populates="push_subscriptions")
