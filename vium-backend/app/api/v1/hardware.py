@@ -26,7 +26,7 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
     
     # [고정밀 로그 출력]
     print("\n" + "🔌" * 25)
-    print(f"📡 [IoT] CONNECTOR SIGNAL: {signal.status} | 🔋 {signal.battery}%")
+    print(f"📡 [IoT] CONNECTOR SIGNAL: {signal.status} | 🔋 {signal.battery}% | ⚡ {signal.voltage}V")
     print(f"📍 STATION : {station.station_name if station else 'N/A'}")
     if signal.user_id:
         print(f"👤 USER ID : {signal.user_id}")
@@ -42,9 +42,9 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
         return {"success": True, "message": "Charger is under maintenance. Status update ignored."}
 
     # 1. Redis 동기화 및 지능형 알림 트리거
-    if signal.status == "CONNECTED" and signal.battery is not None:
+    if signal.status in ["CONNECTED", "CHARGING"] and signal.battery is not None:
         update_station_battery(charger.station_id, signal.battery, signal.user_id)
-        
+
         # [초정밀 개선] 알림 대상 세션 식별 최적화
         query = db.query(models.ChargingSession).filter(
             models.ChargingSession.charger_id == charger.charger_id,
@@ -54,14 +54,14 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
             query = query.filter(models.ChargingSession.user_id == signal.user_id)
         else:
             query = query.filter(models.ChargingSession.is_guest == True)
-        
+
         active_session = query.order_by(models.ChargingSession.created_at.desc()).first()
-        
+
         if active_session:
             user_nickname = active_session.user.nickname if active_session.user else "비회원 고객"
             target_soc = active_session.target_soc or 80
             print(f"🔍 [Notification Check] Session:{active_session.order_id[:8]} | User:{user_nickname} | Battery:{signal.battery}% | Target:{target_soc}%")
-            
+
             # [단계 1: 충전 시작 알림] - 단 한 번만 발송
             if not active_session.is_start_notified:
                 title = "⚡ 충전 시작"
@@ -113,7 +113,7 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
     old_status = charger.status
     new_status = old_status
 
-    if signal.status == "CONNECTED":
+    if signal.status in ["CONNECTED", "CHARGING"]:
         new_status = "Charging"
         if signal.user_id:
             charger.active_user_id = signal.user_id
@@ -158,6 +158,14 @@ def receive_camera_signal(signal: schemas.CameraSignal, db: Session = Depends(ge
     charger = db.query(models.Charger).filter(models.Charger.charger_id == signal.parking_space_id).first()
     if not charger:
         raise HTTPException(status_code=404, detail="Parking space not found")
+
+    # [고정밀 로그 출력 복구]
+    print("\n" + "📸" * 25)
+    print(f"📡 [IoT] VISION MONITORING SIGNAL")
+    print(f"📍 ID      : {signal.parking_space_id}")
+    print(f"🚘 PRESENT : {signal.vehicle_present}")
+    print(f"🔍 CONF    : {signal.confidence_score}")
+    print("📸" * 25 + "\n")
 
     # [중요: 점검 중 상태 보호 로직]
     if charger.status == "Faulty":
