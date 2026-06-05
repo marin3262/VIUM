@@ -87,12 +87,18 @@ export const ReportModal: React.FC<ReportModalProps> = ({ station, onClose }) =>
   ];
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
-      <div className="absolute inset-0 bg-red-950/80 backdrop-blur-md" onClick={onClose}></div>
-      <div className="relative bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden p-8 max-h-[90vh] overflow-y-auto no-scrollbar">
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
+      <div className="absolute inset-0" onClick={onClose}></div>
+      <div className="relative bg-white w-full max-w-md rounded-t-[40px] sm:rounded-[40px] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-500 max-h-[95vh] flex flex-col">
+        
+        {/* Mobile Drag Handle */}
+        <div className="sm:hidden w-full flex justify-center pt-4 pb-2">
+          <div className="w-12 h-1.5 bg-gray-200 rounded-full" />
+        </div>
+
         {!isSubmitted ? (
           <>
-            <div className="flex justify-between items-start mb-6">
+            <div className="flex justify-between items-start px-8 pt-4 pb-6">
               <div>
                 <h3 className="text-xl font-black text-gray-900">현장 고장 제보</h3>
                 <p className="text-red-500 text-xs font-bold mt-1">{station.station_name}</p>
@@ -100,7 +106,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ station, onClose }) =>
               <button onClick={onClose} className="p-2 text-gray-300 hover:text-gray-500 transition-colors" disabled={isSubmitting}><X size={20} /></button>
             </div>
 
-            <div className="space-y-6">
+            <div className="overflow-y-auto px-8 space-y-6 no-scrollbar pb-6">
               {/* 1. 충전기 선택 */}
               <div className="space-y-3">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">몇 번 충전기인가요?</p>
@@ -174,7 +180,9 @@ export const ReportModal: React.FC<ReportModalProps> = ({ station, onClose }) =>
                   className="w-full h-24 bg-gray-50 border border-gray-100 rounded-[24px] p-4 text-sm focus:ring-2 focus:ring-red-500 outline-none transition-all resize-none"
                 ></textarea>
               </div>
+            </div>
 
+            <div className="p-6 bg-gray-50/50 border-t border-gray-50">
               <div className="flex gap-3">
                 <input 
                   type="file" 
@@ -200,10 +208,11 @@ export const ReportModal: React.FC<ReportModalProps> = ({ station, onClose }) =>
             </div>
           </>
         ) : (
-          <div className="py-12 flex flex-col items-center text-center animate-in zoom-in">
-            <div className="bg-green-100 p-6 rounded-full text-green-600 mb-6"><CheckCircle2 size={48} /></div>
+          <div className="py-12 flex flex-col items-center text-center animate-in zoom-in px-8">
+            <div className="bg-green-100 p-6 rounded-full text-green-600 mb-6"><CheckCircle2 size={56} /></div>
             <h3 className="text-2xl font-black text-gray-900 mb-2">제보 접수 완료!</h3>
-            <p className="text-gray-400 text-sm">신속히 확인하여 조치하겠습니다.<br />보상은 관리자 승인 후 지급됩니다.</p>
+            <p className="text-gray-400 text-sm font-medium">신속히 확인하여 조치하겠습니다.<br />보상은 관리자 승인 후 지급됩니다.</p>
+            <button onClick={onClose} className="w-full bg-gray-900 text-white py-5 rounded-3xl text-lg font-black mt-10 shadow-xl transition-all active:scale-95">닫기</button>
           </div>
         )}
       </div>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Compass, Navigation, Clock, Flag, X } from "lucide-react";
+import { Compass, Navigation, Clock, Flag, X, Info } from "lucide-react";
 import { useStationStore } from "../../store/stationStore";
 import type { ChargingStation } from "../../types";
 
@@ -7,6 +7,7 @@ interface StationMapProps {
   stations: ChargingStation[];
   onMarkerClick: (station: ChargingStation) => void;
   onMapClick?: () => void;
+  onViewStationInfo?: (stationId: string) => void; // 신규: 요약 정보/상세 보기 연동
   isLoading: boolean;
 }
 
@@ -22,7 +23,7 @@ interface MarkerState {
   uri: string;
 }
 
-export function StationMap({ stations, onMarkerClick, onMapClick, isLoading }: StationMapProps) {
+export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationInfo, isLoading }: StationMapProps) {
   const container = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const clustererInstance = useRef<any>(null);
@@ -419,24 +420,24 @@ export function StationMap({ stations, onMarkerClick, onMapClick, isLoading }: S
         </div>
       )}
 
-      {/* 내 위치 버튼 */}
+      {/* 내 위치 버튼 - 잘림 방지를 위해 위치 조정 (bottom-6 -> bottom-24 on mobile) */}
       <button 
         onClick={handleMyLocation}
-        className="absolute bottom-6 right-6 z-30 w-12 h-12 bg-white rounded-2xl shadow-xl border border-gray-100 flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-all active:scale-95"
+        className="absolute bottom-24 md:bottom-6 right-6 z-30 w-12 h-12 bg-white rounded-2xl shadow-xl border border-gray-100 flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-all active:scale-95"
         title="내 위치 찾기"
       >
         <Compass size={24} />
       </button>
 
-      {/* [UX 개편] 주행 요약 대시보드 (하단 중앙) */}
+      {/* [UX 개편] 주행 요약 대시보드 (하단 중앙) - 모바일 네비게이션 고려 위치 상향 */}
       {routeSummary && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-48px)] max-w-sm bg-white/90 backdrop-blur-md rounded-[32px] shadow-2xl border border-white/20 p-5 animate-in slide-in-from-bottom-10 duration-500">
+        <div className="absolute bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-48px)] max-w-sm bg-white/95 backdrop-blur-md rounded-[32px] shadow-2xl border border-white/20 p-5 animate-in slide-in-from-bottom-10 duration-500">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
                 <Navigation size={18} fill="currentColor" />
               </div>
-              <h4 className="text-sm font-black text-gray-900">길찾기 주행 모드</h4>
+              <h4 className="text-sm font-black text-gray-900">주행 대시보드</h4>
             </div>
             <button 
               onClick={clearRoute}
@@ -470,15 +471,24 @@ export function StationMap({ stations, onMarkerClick, onMapClick, isLoading }: S
             </div>
           </div>
 
-          <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between">
-            <p className="text-[10px] font-bold text-gray-400 truncate max-w-[200px]">
+          <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between gap-3">
+            <p className="text-[10px] font-bold text-gray-400 truncate flex-1">
               목적지: {routeSummary.destinationName || '선택한 충전소'}
             </p>
-            <div className="flex gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-300 animate-pulse delay-75" />
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-100 animate-pulse delay-150" />
-            </div>
+            
+            {/* [신규] 충전소 정보 확인 버튼 */}
+            <button 
+              onClick={() => {
+                const target = stations.find(s => s.station_name === routeSummary.destinationName);
+                if (target && onViewStationInfo) {
+                  clearRoute();
+                  onViewStationInfo(target.station_id);
+                }
+              }}
+              className="px-3 py-1.5 bg-blue-600 text-white rounded-xl text-[10px] font-black flex items-center gap-1 hover:bg-blue-700 transition-all active:scale-95"
+            >
+              <Info size={12} /> 정보 보기
+            </button>
           </div>
         </div>
       )}

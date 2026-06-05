@@ -57,7 +57,7 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
   if (!user) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-0 md:p-4 animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[55] flex items-end md:items-center justify-center p-0 md:p-4 animate-in fade-in duration-300">
       <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={onClose}></div>
       
       {/* 리뷰 수정 모달 */}
@@ -69,39 +69,39 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
         />
       )}
 
-      <div className="relative bg-white w-full max-w-4xl h-full md:h-[85vh] md:rounded-[40px] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in duration-500">
+      <div className="relative bg-white w-full max-w-4xl h-[100dvh] md:h-[85vh] rounded-t-[40px] md:rounded-[40px] shadow-2xl overflow-hidden flex flex-col animate-in slide-in-from-bottom-10 md:slide-in-from-bottom-0 md:zoom-in-95 duration-500">
         
-        {/* Header */}
-        <div className="p-6 md:p-8 bg-gradient-to-br from-blue-600 to-indigo-700 text-white shrink-0">
-          <div className="flex justify-between items-start mb-6">
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-white/20 rounded-3xl backdrop-blur-md flex items-center justify-center text-3xl font-black">
+        {/* Header - 모바일 압축 버전 */}
+        <div className="p-5 md:p-8 bg-gradient-to-br from-blue-600 to-indigo-700 text-white shrink-0">
+          <div className="flex justify-between items-start mb-4 md:mb-6">
+            <div className="flex items-center gap-3 md:gap-4">
+              <div className="w-12 h-12 md:w-16 md:h-16 bg-white/20 rounded-2xl md:rounded-3xl backdrop-blur-md flex items-center justify-center text-2xl md:text-3xl font-black">
                 {user.nickname[0]}
               </div>
               <div>
-                <h2 className="text-2xl font-black">{user.nickname}님</h2>
-                <p className="text-blue-100 text-sm font-medium opacity-80">{user.level}</p>
+                <h2 className="text-xl md:text-2xl font-black">{user.nickname}님</h2>
+                <p className="text-blue-100 text-[10px] md:text-sm font-medium opacity-80">{user.level}</p>
               </div>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-              <XCircle size={24} />
+            <button onClick={onClose} className="p-1.5 md:p-2 hover:bg-white/10 rounded-full transition-colors">
+              <XCircle size={20} className="md:w-6 md:h-6" />
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-white/10 rounded-2xl p-4 backdrop-blur-sm border border-white/10">
-              <p className="text-blue-100 text-[10px] font-black uppercase tracking-widest mb-1">Total Mileage</p>
+          <div className="grid grid-cols-2 gap-3 md:gap-4">
+            <div className="bg-white/10 rounded-xl md:rounded-2xl p-3 md:p-4 backdrop-blur-sm border border-white/10">
+              <p className="text-blue-100 text-[8px] md:text-[10px] font-black uppercase tracking-widest mb-0.5 md:mb-1">Total Mileage</p>
               <div className="flex items-baseline gap-1">
-                <span className="text-2xl font-black">{user.mileage_balance.toLocaleString()}</span>
-                <span className="text-sm font-bold opacity-80">P</span>
+                <span className="text-xl md:text-2xl font-black">{user.mileage_balance.toLocaleString()}</span>
+                <span className="text-xs font-bold opacity-80">P</span>
               </div>
             </div>
-            <div className="bg-white/10 rounded-2xl p-4 backdrop-blur-sm border border-white/10">
-              <p className="text-blue-100 text-[10px] font-black uppercase tracking-widest mb-1">Trust Score</p>
-              <div className="flex items-center gap-2">
-                <ShieldCheck size={20} className="text-green-300" />
-                <span className="text-2xl font-black">{user.trust_score || 100}</span>
-                <span className="text-sm font-bold opacity-80">점</span>
+            <div className="bg-white/10 rounded-xl md:rounded-2xl p-3 md:p-4 backdrop-blur-sm border border-white/10">
+              <p className="text-blue-100 text-[8px] md:text-[10px] font-black uppercase tracking-widest mb-0.5 md:mb-1">Trust Score</p>
+              <div className="flex items-center gap-1.5">
+                <ShieldCheck size={16} className="text-green-300 md:w-5 md:h-5" />
+                <span className="text-xl md:text-2xl font-black">{user.trust_score || 100}</span>
+                <span className="text-xs font-bold opacity-80">점</span>
               </div>
             </div>
           </div>
@@ -127,9 +127,9 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-6 md:p-8 no-scrollbar">
+        <div className="flex-1 overflow-y-auto p-5 md:p-8 no-scrollbar pb-32">
           {activeTab === 'MILEAGE' && (
-            <div className="space-y-4">
+            <div className="space-y-3 md:space-y-4">
               {(user.mileage_logs || []).length > 0 ? user.mileage_logs.map((log) => (
                 <div key={log.log_id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl hover:bg-gray-100 transition-colors">
                   <div className="flex items-center gap-4">
@@ -152,24 +152,24 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
           )}
 
           {activeTab === 'REPORTS' && (
-            <div className="space-y-4">
+            <div className="space-y-3 md:space-y-4">
               {(user.reports || []).length > 0 ? user.reports!.map((report) => (
-                <div key={report.report_id} className="p-5 border border-gray-100 rounded-3xl bg-white shadow-sm flex items-start gap-4">
-                  <div className={`mt-1 w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                <div key={report.report_id} className="p-4 md:p-5 border border-gray-100 rounded-3xl bg-white shadow-sm flex items-start gap-4">
+                  <div className={`mt-1 w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center shrink-0 ${
                     report.status === 'PENDING' ? 'bg-orange-100 text-orange-600' : 
                     report.status === 'APPROVED' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
                   }`}>
-                    {report.status === 'PENDING' ? <Clock size={18} /> : 
-                     report.status === 'APPROVED' ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
+                    {report.status === 'PENDING' ? <Clock size={16} /> : 
+                     report.status === 'APPROVED' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start mb-1">
-                      <h4 className="font-bold text-gray-900 truncate">충전기 {report.charger_id}</h4>
+                      <h4 className="text-sm font-bold text-gray-900 truncate">충전기 {report.charger_id}</h4>
                       <span className="text-[10px] text-gray-400">{new Date(report.created_at).toLocaleDateString()}</span>
                     </div>
-                    <p className="text-xs text-blue-600 font-bold mb-1">{report.keyword}</p>
-                    <p className="text-sm text-gray-600 mb-2 line-clamp-2">{report.content}</p>
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                    <p className="text-[10px] text-blue-600 font-bold mb-1">{report.keyword}</p>
+                    <p className="text-xs text-gray-600 mb-2 line-clamp-2">{report.content}</p>
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
                       report.status === 'PENDING' ? 'bg-orange-50 text-orange-600' : 
                       report.status === 'APPROVED' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
                     }`}>
@@ -185,38 +185,38 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
           )}
 
           {activeTab === 'REVIEWS' && (
-            <div className="space-y-4">
+            <div className="space-y-3 md:space-y-4">
               {(user.reviews || []).length > 0 ? user.reviews!.map((review) => (
-                <div key={review.id} className="p-5 border border-gray-100 rounded-3xl bg-white shadow-sm">
+                <div key={review.id} className="p-4 md:p-5 border border-gray-100 rounded-3xl bg-white shadow-sm">
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex items-center gap-2">
                       <div className="flex text-yellow-400">
                         {[...Array(5)].map((_, i) => (
-                          <span key={i} className={`text-xs ${i < review.rating ? 'fill-current' : 'text-gray-200'}`}>★</span>
+                          <span key={i} className={`text-[10px] ${i < review.rating ? 'fill-current' : 'text-gray-200'}`}>★</span>
                         ))}
                       </div>
-                      <span className="text-[10px] text-gray-400">{new Date(review.created_at).toLocaleDateString()}</span>
+                      <span className="text-[9px] text-gray-400">{new Date(review.created_at).toLocaleDateString()}</span>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1">
                       <button 
                         onClick={() => setEditingReview(review)}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                        className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all active:scale-90"
                         title="수정"
                       >
-                        <Edit3 size={14} />
+                        <Edit3 size={16} />
                       </button>
                       <button 
                         onClick={() => handleDeleteReview(review.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                        className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-all active:scale-90"
                         title="삭제"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   </div>
-                  <p className="text-sm text-gray-700 mb-3 break-keep">{review.content}</p>
+                  <p className="text-xs text-gray-700 mb-3 break-keep leading-relaxed">{review.content}</p>
                   <div className="flex items-center gap-2">
-                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                    <span className={`text-[8px] font-black px-2 py-0.5 rounded-full ${
                       review.status === 'VISIBLE' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
                     }`}>
                       {review.status === 'VISIBLE' ? '정상 노출 중' : '관리자에 의해 숨김 처리됨'}
@@ -231,37 +231,37 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
         </div>
 
         {/* Footer Settings */}
-        <div className="p-6 bg-gray-50 border-t border-gray-100 flex flex-col gap-3 md:rounded-b-[40px]">
+        <div className="p-5 pb-28 md:pb-6 bg-gray-50 border-t border-gray-100 flex flex-col gap-2 md:rounded-b-[40px] shrink-0">
           
-          <div className="flex gap-3">
+          <div className="flex gap-2">
             <button 
               onClick={handlePushToggle}
               disabled={isSubscribing}
-              className={`flex-[2] flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black transition-all active:scale-95 ${
+              className={`flex-[2] flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black transition-all active:scale-95 ${
                 isPushEnabled
                   ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100'
                   : 'bg-white border border-gray-200 text-blue-600 hover:bg-blue-50'
               }`}
             >
-              {isSubscribing ? <Loader2 size={16} className="animate-spin" /> : 
-               (isPushEnabled ? <BellRing size={16} /> : <BellOff size={16} />)}
+              {isSubscribing ? <Loader2 size={14} className="animate-spin" /> : 
+               (isPushEnabled ? <BellRing size={14} /> : <BellOff size={14} />)}
               {isPushEnabled ? '실시간 알림 ON' : '실시간 알림 OFF'}
             </button>
 
             <button 
               onClick={() => { logout(); onClose(); }}
-              className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-white border border-gray-200 text-gray-600 rounded-2xl text-xs font-black hover:bg-gray-100 transition-all active:scale-95"
+              className="flex-1 flex items-center justify-center gap-2 py-3 bg-white border border-gray-200 text-gray-600 rounded-2xl text-[10px] font-black hover:bg-gray-100 transition-all active:scale-95"
             >
-              <LogOut size={16} /> 로그아웃
+              <LogOut size={14} /> 로그아웃
             </button>
           </div>
 
           <button 
             onClick={handleWithdrawal}
             disabled={isLoading}
-            className="w-full flex items-center justify-center gap-2 py-3.5 bg-red-50 text-red-500 rounded-2xl text-xs font-black hover:bg-red-100 transition-all active:scale-95 disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-2 py-3 bg-red-50 text-red-500 rounded-2xl text-[10px] font-black hover:bg-red-100 transition-all active:scale-95 disabled:opacity-50"
           >
-            <Trash2 size={16} /> 회원 탈퇴
+            <Trash2 size={14} /> 회원 탈퇴
           </button>
         </div>
 

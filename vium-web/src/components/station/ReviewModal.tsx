@@ -94,12 +94,13 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, editReview, o
   };
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 animate-in fade-in duration-300">
-      <div className="absolute inset-0 bg-blue-900/80 backdrop-blur-md" onClick={onClose}></div>
-      <div className="relative bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden p-8">
+    <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-md animate-in fade-in duration-300">
+      <div className="absolute inset-0" onClick={onClose}></div>
+      <div className="relative bg-white w-full max-w-md rounded-t-[40px] sm:rounded-[40px] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-500 max-h-[90vh] flex flex-col">
+        
         {!isSubmitted ? (
           <>
-            <div className="flex justify-between items-start mb-6">
+            <div className="flex justify-between items-start px-8 pt-8 pb-6">
               <div>
                 <h3 className="text-xl font-black text-gray-900">
                   {isEditMode ? '나의 리뷰 수정' : '현장 리뷰 남기기'}
@@ -115,7 +116,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, editReview, o
               </button>
             </div>
 
-            <div className="space-y-6">
+            <div className="flex-1 overflow-y-auto px-8 space-y-6 no-scrollbar">
               <div className="flex justify-center gap-2">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button 
@@ -125,7 +126,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, editReview, o
                     disabled={isSubmitting}
                   >
                     <Star 
-                      size={36} 
+                      size={40} 
                       className={star <= rating ? 'text-yellow-400 fill-current' : 'text-gray-200'} 
                     />
                   </button>
@@ -138,10 +139,12 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, editReview, o
                   onChange={(e) => setContent(e.target.value)}
                   placeholder="예: 주차가 편해요, 주변에 카페가 있어요 등"
                   disabled={isSubmitting}
-                  className="w-full h-32 bg-gray-50 border border-gray-100 rounded-[24px] p-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none disabled:opacity-50"
+                  className="w-full h-40 bg-gray-50 border border-gray-100 rounded-[32px] p-6 text-base font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none disabled:opacity-50"
                 ></textarea>
               </div>
+            </div>
 
+            <div className="p-8 bg-gray-50/50 border-t border-gray-50">
               <button 
                 disabled={!isValid || isSubmitting}
                 onClick={handleSubmit}
@@ -162,12 +165,13 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, editReview, o
             </div>
           </>
         ) : (
-          <div className="py-12 flex flex-col items-center text-center animate-in zoom-in">
+          <div className="py-16 flex flex-col items-center text-center animate-in zoom-in px-8">
             <div className="bg-green-100 p-6 rounded-full text-green-600 mb-6">
-              <CheckCircle2 size={48} />
+              <CheckCircle2 size={56} />
             </div>
             <h3 className="text-2xl font-black text-gray-900 mb-2">리뷰 등록 완료!</h3>
-            <p className="text-gray-400 text-sm">소중한 피드백 감사합니다.<br />마일리지가 지급되었습니다.</p>
+            <p className="text-gray-400 text-sm font-medium">소중한 피드백 감사합니다.<br />마일리지가 지급되었습니다.</p>
+            <button onClick={onClose} className="w-full bg-gray-900 text-white py-5 rounded-3xl text-lg font-black mt-10 shadow-xl transition-all active:scale-95">닫기</button>
           </div>
         )}
       </div>

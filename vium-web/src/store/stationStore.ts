@@ -110,8 +110,20 @@ export const useStationStore = create<StationState>((set, get) => ({
   },
 
   getFilteredStations: () => {
-    const { stations, activeFilter, selectedConnector, onlyAvailable, searchQuery } = get();
+    const { stations, activeFilter, selectedConnector, onlyAvailable, searchQuery, userLocation } = get();
     if (!Array.isArray(stations)) return [];
+
+    const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+      const R = 6371; // km
+      const dLat = (lat2 - lat1) * (Math.PI / 180);
+      const dLon = (lon2 - lon1) * (Math.PI / 180);
+      const a = 
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    };
 
     const normalizedQuery = searchQuery.trim().toLowerCase();
     const filtered = stations.filter((station) => {
@@ -129,11 +141,22 @@ export const useStationStore = create<StationState>((set, get) => ({
              station.address.toLowerCase().includes(normalizedQuery);
     });
 
-    if (normalizedQuery === '') return filtered;
     return [...filtered].sort((a, b) => {
-      const aMatch = a.station_name.toLowerCase().includes(normalizedQuery) ? 1 : 0;
-      const bMatch = b.station_name.toLowerCase().includes(normalizedQuery) ? 1 : 0;
-      return bMatch - aMatch;
+      // 1. Search query match priority (Name match comes first)
+      if (normalizedQuery !== '') {
+        const aNameMatch = a.station_name.toLowerCase().includes(normalizedQuery) ? 1 : 0;
+        const bNameMatch = b.station_name.toLowerCase().includes(normalizedQuery) ? 1 : 0;
+        if (aNameMatch !== bNameMatch) return bNameMatch - aNameMatch;
+      }
+
+      // 2. Distance priority
+      if (userLocation) {
+        const distA = calculateDistance(userLocation.lat, userLocation.lng, Number(a.latitude), Number(a.longitude));
+        const distB = calculateDistance(userLocation.lat, userLocation.lng, Number(b.latitude), Number(b.longitude));
+        return distA - distB;
+      }
+
+      return 0;
     });
   },
 }));

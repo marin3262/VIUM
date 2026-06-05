@@ -56,11 +56,11 @@ class StationBase(BaseModel):
     address: str
     latitude: Decimal
     longitude: Decimal
-    price: int = 300
+    price: int = 340
     isTimeSale: bool = False
-    priceHistory: List[int] = Field(default_factory=lambda: [300]*24)
-    lastSuccessTime: str = "정보 없음"
-    distance: Optional[str] = "-"
+    priceHistory: List[int] = Field(default_factory=lambda: [340]*24)
+    lastSuccessTime: str = "방금 전"
+    distance: str = "-"
     current_battery: Optional[float] = None
 
 class Station(StationBase):

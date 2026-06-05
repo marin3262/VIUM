@@ -184,10 +184,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-300">
-      <div className="absolute inset-0 bg-blue-900/80 backdrop-blur-md" onClick={onClose}></div>
-      <div className="relative bg-white w-full max-w-sm rounded-[40px] shadow-2xl overflow-hidden p-8 animate-in zoom-in duration-500 overflow-y-auto max-h-[95vh]">
-        <div className="flex justify-between items-start mb-6">
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-md animate-in fade-in duration-300">
+      <div className="absolute inset-0" onClick={onClose}></div>
+      <div className="relative bg-white w-full max-w-sm rounded-t-[40px] sm:rounded-[40px] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-10 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-500 flex flex-col max-h-[90vh]">
+        
+        {/* Mobile Drag Handle */}
+        <div className="sm:hidden w-full flex justify-center pt-4 pb-2">
+          <div className="w-12 h-1.5 bg-gray-200 rounded-full" />
+        </div>
+
+        <div className="flex justify-between items-start px-8 pt-4 pb-6">
           <div>
             <h3 className="text-2xl font-black text-gray-900 leading-tight">
               {mode === 'LOGIN' ? '환영합니다!' : 'VIUM 가입하기'}
@@ -199,7 +205,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
           <button onClick={onClose} className="p-2 text-gray-300 hover:text-gray-500 transition-colors"><X size={20} /></button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-8 space-y-4 no-scrollbar pb-6">
           {/* --- Email Section --- */}
           <div className="space-y-1">
             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Email</label>
@@ -410,28 +416,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
               </div>
             </div>
           )}
+        </form>
 
+        <div className="p-8 bg-gray-50/50 border-t border-gray-50 space-y-4">
           <button 
-            type="submit" 
+            onClick={handleSubmit} 
             disabled={isLoading || (mode === 'SIGNUP' && missingReqs.length > 0)}
-            className="w-full bg-blue-600 text-white py-4 rounded-3xl text-sm font-black shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all active:scale-95 disabled:bg-gray-200 disabled:shadow-none flex items-center justify-center gap-2 mt-4"
+            className="w-full bg-blue-600 text-white py-4 rounded-3xl text-sm font-black shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all active:scale-95 disabled:bg-gray-200 disabled:shadow-none flex items-center justify-center gap-2"
           >
             {isLoading ? <Loader2 className="animate-spin" size={20} /> : (mode === 'LOGIN' ? '로그인' : '회원가입')}
             {!isLoading && <ArrowRight size={16} />}
           </button>
-        </form>
 
-        <div className="mt-6 text-center">
-          <button 
-            onClick={() => {
-              setMode(mode === 'LOGIN' ? 'SIGNUP' : 'LOGIN');
-              setError(null);
-              setPasswordConfirm('');
-            }}
-            className="text-xs font-bold text-gray-400 hover:text-blue-600 transition-colors"
-          >
-            {mode === 'LOGIN' ? '아직 계정이 없으신가요? 가입하기' : '이미 계정이 있으신가요? 로그인'}
-          </button>
+          <div className="text-center">
+            <button 
+              onClick={() => {
+                setMode(mode === 'LOGIN' ? 'SIGNUP' : 'LOGIN');
+                setError(null);
+                setPasswordConfirm('');
+              }}
+              className="text-xs font-bold text-gray-400 hover:text-blue-600 transition-colors"
+            >
+              {mode === 'LOGIN' ? '아직 계정이 없으신가요? 가입하기' : '이미 계정이 있으신가요? 로그인'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

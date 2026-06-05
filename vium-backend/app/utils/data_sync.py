@@ -8,9 +8,18 @@ import random
 def generate_price_history(base_price):
     history = []
     for hour in range(24):
-        if 0 <= hour <= 6: price = base_price - random.randint(50, 80)
-        elif 11 <= hour <= 15: price = base_price + random.randint(20, 50)
-        else: price = base_price + random.randint(-20, 20)
+        # 전통적 부하(Peak-load) 모델 반영: 점심/저녁 피크, 심야 저가
+        if 23 <= hour or hour <= 7: 
+            # 심야/새벽 경부하 (가장 저렴)
+            price = base_price - random.randint(60, 80)
+        elif (11 <= hour <= 13) or (18 <= hour <= 20):
+            # 점심 및 저녁 피크 시간대 (가장 비쌈)
+            price = base_price + random.randint(50, 70)
+        elif (8 <= hour <= 10) or (14 <= hour <= 17) or (21 <= hour <= 22):
+            # 중간 부하 시간대
+            price = base_price + random.randint(-10, 10)
+        else:
+            price = base_price
         history.append(price)
     return history
 
@@ -44,7 +53,7 @@ def sync_kepco_data(addr: str = "양주시"):
             station_id = str(item.get("csId"))
             station = db.query(models.Station).filter(models.Station.station_id == station_id).first()
             
-            base_price = 300
+            base_price = 340
             
             if not station:
                 station = models.Station(

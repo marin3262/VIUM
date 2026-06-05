@@ -8,9 +8,18 @@ import random
 def generate_price_history(base_price):
     history = []
     for hour in range(24):
-        if 0 <= hour <= 6: price = base_price - random.randint(50, 80)
-        elif 11 <= hour <= 15: price = base_price + random.randint(20, 50)
-        else: price = base_price + random.randint(-20, 20)
+        # 전통적 부하(Peak-load) 모델 반영: 점심/저녁 피크, 심야 저가
+        if 23 <= hour or hour <= 7: 
+            # 심야/새벽 경부하 (가장 저렴)
+            price = base_price - random.randint(60, 80)
+        elif (11 <= hour <= 13) or (18 <= hour <= 20):
+            # 점심 및 저녁 피크 시간대 (가장 비쌈)
+            price = base_price + random.randint(50, 70)
+        elif (8 <= hour <= 10) or (14 <= hour <= 17) or (21 <= hour <= 22):
+            # 중간 부하 시간대
+            price = base_price + random.randint(-10, 10)
+        else:
+            price = base_price
         history.append(price)
     return history
 
@@ -35,11 +44,11 @@ def seed():
         user.mileage_balance = 15700
         user.trust_score = 98
 
-    # 2. 충전소 및 충전기 데이터 (양주 및 서울 통합)
+    # 2. 충전소 및 충전기 데이터 (2026 현실화 요금 반영)
     station_data = [
         {
             "id": "YANGJU_001", "name": "양주시청 공영주차장", "addr": "경기도 양주시 부흥로 1533",
-            "lat": "37.7853", "lng": "127.0457", "price": 290, "dist": "0.1km",
+            "lat": "37.7853", "lng": "127.0457", "price": 240, "dist": "0.1km",
             "chargers": [
                 {"id": "CH_YJ01_1", "type": "급속", "conn": "DC Combo", "status": "Available"},
                 {"id": "CH_YJ01_2", "type": "완속", "conn": "Slow", "status": "Available"}
@@ -47,7 +56,7 @@ def seed():
         },
         {
             "id": "YANGJU_002", "name": "옥정신도시 중심상가 주차타워", "addr": "경기도 양주시 옥정로 226",
-            "lat": "37.8175", "lng": "127.0945", "price": 310, "dist": "4.2km",
+            "lat": "37.8175", "lng": "127.0945", "price": 340, "dist": "4.2km",
             "chargers": [
                 {"id": "CH_YJ02_1", "type": "급속", "conn": "DC Combo", "status": "Available"},
                 {"id": "CH_YJ02_2", "type": "급속", "conn": "DC Combo", "status": "Charging"}
@@ -55,7 +64,7 @@ def seed():
         },
         {
             "id": "KEPCO_002", "name": "코엑스 지하주차장 B2", "addr": "서울특별시 강남구 삼성동 159",
-            "lat": "37.5113", "lng": "127.0598", "price": 345, "dist": "1.2km",
+            "lat": "37.5113", "lng": "127.0598", "price": 390, "dist": "1.2km",
             "chargers": [
                 {"id": "CH_002_1", "type": "초급속", "conn": "DC Combo", "status": "Charging"},
                 {"id": "CH_002_2", "type": "초급속", "conn": "DC Combo", "status": "Charging"}

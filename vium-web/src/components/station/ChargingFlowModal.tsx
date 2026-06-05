@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Zap, CheckCircle2, Coins, BatteryFull, Loader2, Car, ShieldAlert, Eye, Cable, Plug2, ArrowLeft, Lock } from 'lucide-react';
+import { X, Zap, CheckCircle2, Coins, BatteryFull, Loader2, Car, Cable, Plug2, Lock } from 'lucide-react';
 import type { ChargingStation } from '../../types';
 import { useUserStore } from '../../store/userStore';
 import { useNotificationStore } from '../../store/notificationStore';
@@ -15,7 +15,7 @@ interface ChargingFlowModalProps {
   initialStep?: FlowStep;
 }
 
-type FlowStep = 'CONNECTION_PROMPT' | 'SAFETY' | 'PLEDGE' | 'CHARGING' | 'BILLING' | 'WAITING_EXIT' | 'SUCCESS';
+type FlowStep = 'CONNECTION_PROMPT' | 'PLEDGE' | 'CHARGING' | 'BILLING' | 'WAITING_EXIT' | 'SUCCESS';
 
 export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, onClose, onComplete, initialStep = 'CONNECTION_PROMPT' }) => {
   const { user, fetchUser } = useUserStore();
@@ -25,7 +25,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
   const [totalPrice, setTotalPrice] = useState(0);
   const [usedMileage, setUsedMileage] = useState(0);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-  const [safetyStep, setSafetyStep] = useState(0); 
   const [currentSoc, setCurrentSoc] = useState(30);
   const [targetSoc, setTargetSoc] = useState(80);
   const [progress, setProgress] = useState(30);
@@ -56,7 +55,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
     }
   }, [initialStep]);
 
-  // 충전 시작 시 세션 선행 생성 (target_soc 알림을 위함)
   const handleStartCharging = async () => {
     if (!station || !targetChargerIdRef.current) return;
     
@@ -75,7 +73,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
             const orderId = response.data.order_id;
             setActiveOrderId(orderId);
             
-            // [복구]: 충전 시작 로컬 알림
             addNotification({
               id: `start-${orderId}`,
               role: 'USER',
@@ -88,7 +85,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
         }
     } catch (e) {
         console.error("Failed to pre-create session", e);
-        setStep('CHARGING'); // 실패해도 일단 진행 (UI 시뮬레이션 우선)
+        setStep('CHARGING'); 
     }
   };
 
@@ -98,7 +95,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
     try {
       const finalAmount = totalPrice - usedMileage;
       
-      // 기존 세션 정보 업데이트 (금액 확정)
       await stationService.updatePaymentSession(activeOrderId, {
         station_id: station.station_id,
         charger_id: targetChargerIdRef.current,
@@ -160,7 +156,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
           });
           
           if (response.success) {
-            // [복구]: 결제 승인 완료 로컬 알림
             addNotification({
               id: `paid-${orderId}`,
               role: 'USER',
@@ -181,7 +176,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
         } finally { setIsProcessingPayment(false); }
       })();
     }
-  }, [fetchUser]);
+  }, [fetchUser, addNotification]);
 
   useEffect(() => {
     if (step === 'CHARGING' || step === 'BILLING' || step === 'WAITING_EXIT' || step === 'SUCCESS') return;
@@ -208,42 +203,36 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
     else onClose();
   };
 
-  const safetyItems = [
-    { id: 'surroundings', title: '주변 환경 점검', desc: '바닥에 물기나 가연성 물질이 없는지 확인해 주세요.', icon: <Eye className="text-blue-500" size={32} /> },
-    { id: 'cable', title: '케이블 상태 확인', desc: '충전 케이블의 피복이 벗겨지거나 꼬여있지 않나요?', icon: <Cable className="text-orange-500" size={32} /> },
-    { id: 'connector', title: '커넥터 체결 준비', desc: '커넥터 내부에 이물질이 없는지 육안으로 확인하세요.', icon: <Plug2 className="text-green-500" size={32} /> }
-  ];
-
-  const handleSafetyConfirm = () => {
-    if (safetyStep < safetyItems.length - 1) setSafetyStep(prev => prev + 1);
-    else setStep('PLEDGE');
-  };
-
-  const deltaSoc = targetSoc - currentSoc;
   const reward = (() => {
-    const base = 300; let total = base;
+    let total = 0;
     let bonus = 0;
     let type = 'MIN';
-    let label = '기본 보상';
-    let desc = '20% 이상 충전 시 보너스가 지급됩니다.';
+    let label = '보상 없음';
+    let desc = '80% 에코 모드 설정 시에만 마일리지가 지급됩니다.';
 
-    if (deltaSoc >= 20) {
-      if (targetSoc === 100) {
-        type = 'FULL'; label = '완충 모드'; desc = '🔋 100% 완충 완료! 장거리 주행을 응원합니다.';
-        total = base + 300; bonus = 300;
-      } else if (targetSoc === 80) {
-        total = base + 500; bonus = 500; type = 'ECO'; label = '최고 보상'; desc = '🌱 80% 에코 서약 보너스 적립 완료!';
-      } else {
-        total = base + 200; bonus = 200; type = 'EFF'; label = '효율 보상'; desc = '✨ 조기 출차 효율 보너스 적립 완료!';
+    // 1. 기본 보상 (80% vs 100%) - 정책상 80%가 아니면 보상 없음
+    if (targetSoc === 80) {
+      total = 500; // 기본 300 + 에코 200 (황금 밸런스)
+      bonus = 500; 
+      type = 'ECO'; 
+      label = '에코 80% 보상'; 
+      desc = '🌱 80% 충전 제한 및 에코 시간대 보너스 적립!';
+      if (step === 'SUCCESS' && exitTimer > 0) {
+        total += 100; // 10분 이내 매너 보너스
       }
+    } else if (targetSoc === 100) {
+      type = 'FULL'; label = '완충 모드 (사후 정산)'; desc = '🔋 완충까지 소요된 시간에 비례하여 충전 종료 후 별도 정산됩니다.';
+    } else {
+      type = 'MIN'; label = '일반 충전'; desc = '✨ 80% 에코 모드를 이용하시면 파격적인 보상이 지급됩니다.';
     }
-    if (step === 'SUCCESS' && exitTimer > 0) total += 500;
+
     return { total, bonus, type, label, desc };
   })();
 
   const triggerStepChangeToBilling = () => {
     const chargedPercent = targetSoc - currentSoc;
-    setTotalPrice(Math.max(0, chargedPercent * 200));
+    // 실제 요금표 반영 (2026 급속 평균가 340원 단가 적용)
+    setTotalPrice(Math.max(0, chargedPercent * 340));
     setStep('BILLING');
   };
 
@@ -268,10 +257,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
     if (step === 'CHARGING' && progress >= targetSoc && !isCompletedRef.current) {
       isCompletedRef.current = true;
       
-      // [신규]: 통합 알림 브릿지 가동
-      // 프론트엔드 시뮬레이션이 끝나는 즉시 백엔드와 동일한 규격의 알림을 로컬 스토어에 추가합니다.
-      // 이렇게 하면 백엔드 푸시가 지연되더라도 사용자는 즉시 '✅' 알림을 받게 되며,
-      // 추후 도착하는 실제 푸시 알림은 tag(ID) 기반 중복 방지 로직에 의해 자동으로 걸러집니다.
       addNotification({
         id: activeOrderId ? `done-${activeOrderId}` : undefined,
         role: 'USER',
@@ -293,7 +278,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
         
         if (targetCharger?.status === 'Available') {
           setStep('SUCCESS');
-          // [복구]: 출차 완료 로컬 알림
           addNotification({
             id: activeOrderId ? `exit-${activeOrderId}` : undefined,
             role: 'USER',
@@ -304,7 +288,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
         }
         else if (targetCharger?.status === 'Occupied' && !isConnectorDisconnected) {
           setIsConnectorDisconnected(true);
-          // [복구]: 커넥터 분리 로컬 알림
           addNotification({
             id: activeOrderId ? `disconnect-${activeOrderId}` : undefined,
             role: 'USER',
@@ -321,11 +304,12 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
   if (!station) return null;
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-0 sm:p-4 animate-in fade-in duration-300">
       <div className="absolute inset-0 bg-blue-900/90 backdrop-blur-xl" onClick={attemptClose}></div>
-      <div className="relative bg-white w-full max-w-md rounded-[40px] shadow-2xl overflow-hidden flex flex-col transition-all duration-500">
+      <div className={`relative bg-white w-full h-[100dvh] sm:h-auto sm:max-h-[95vh] max-w-md sm:rounded-[40px] shadow-2xl flex flex-col transition-all duration-500 ${step === 'BILLING' ? 'transform-none' : 'animate-in zoom-in-95'}`}>
         
-        <div className="flex justify-between items-center px-8 pt-8 pb-2">
+        {/* Cinematic Header */}
+        <div className="flex justify-between items-center px-6 pt-6 sm:pt-8 pb-2 shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse" />
             <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{step} Session</span>
@@ -334,76 +318,73 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
         </div>
 
         {step === 'CONNECTION_PROMPT' && (
-          <div className="p-8 pt-4 flex flex-col items-center justify-center space-y-6 animate-in slide-in-from-bottom-5 duration-500">
-            <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mx-auto animate-pulse"><Cable className="text-blue-600" size={48} /></div>
-            <div className="text-center space-y-2">
+          <div className="p-6 pt-4 flex-1 flex flex-col items-center justify-center space-y-8 animate-in zoom-in duration-500">
+            <div className="w-32 h-32 bg-blue-50 rounded-full flex items-center justify-center mx-auto animate-pulse"><Cable className="text-blue-600" size={64} /></div>
+            <div className="text-center space-y-3">
               <h3 className="text-2xl font-black text-gray-900 leading-tight">충전기 연결 감지</h3>
-              <p className="text-sm text-gray-500 font-medium break-keep">차량과 충전기가 성공적으로 연결되었습니다.<br />충전을 시작하시겠습니까?</p>
+              <p className="text-sm text-gray-500 font-medium break-keep px-4">차량과 충전기가 성공적으로 연결되었습니다.<br />충전을 시작하시겠습니까?</p>
             </div>
             
-            <div className="w-full bg-blue-50/50 px-6 py-4 rounded-2xl border border-blue-100 flex items-center justify-center gap-3">
-              <BatteryFull className="text-blue-500" size={24} />
-              <span className="text-base font-black text-blue-700">현재 배터리: {Math.floor(currentSoc)}%</span>
+            <div className="w-full bg-blue-50/50 px-8 py-5 rounded-3xl border border-blue-100 flex items-center justify-center gap-4">
+              <BatteryFull className="text-blue-500" size={28} />
+              <span className="text-lg font-black text-blue-700">현재 배터리: {Math.floor(currentSoc)}%</span>
             </div>
 
-            <div className="w-full flex gap-3 pt-2">
-              <button onClick={attemptClose} className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 text-gray-500 rounded-2xl font-black transition-colors">취소</button>
-              <button onClick={() => setStep('SAFETY')} className="flex-[2] py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black shadow-lg shadow-blue-200 transition-all active:scale-95">충전 진행하기</button>
-            </div>
-          </div>
-        )}
-
-        {step === 'SAFETY' && (
-          <div className="p-8 pt-4 space-y-8 animate-in slide-in-from-bottom-5 duration-500">
-            <div className="flex justify-between items-center">
-              <div><h3 className="text-xl font-black text-gray-900 leading-tight">안전 가디언 점검</h3><p className="text-gray-400 text-xs mt-1">충전 전 3단계를 신중하게 확인해 주세요.</p></div>
-              <ShieldAlert className="text-red-500 animate-pulse" size={28} />
-            </div>
-            
-            <div className="flex gap-2">
-              {safetyItems.map((_, i) => (
-                <div key={i} className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${i <= safetyStep ? 'bg-blue-600' : 'bg-gray-100'}`} />
-              ))}
-            </div>
-
-            <div key={safetyStep} className="bg-gray-50 rounded-[40px] p-8 border border-gray-100 flex flex-col items-center justify-center text-center space-y-6 animate-in slide-in-from-right-10 duration-500 min-h-[300px]">
-              <div className="w-24 h-24 rounded-full bg-white shadow-sm border border-gray-50 flex items-center justify-center shrink-0">{safetyItems[safetyStep].icon}</div>
-              <div className="space-y-3">
-                <h4 className="text-xl font-black text-gray-800">{safetyItems[safetyStep].title}</h4>
-                <p className="text-sm text-gray-500 font-medium break-keep max-w-[240px]">{safetyItems[safetyStep].desc}</p>
-              </div>
-            </div>
-            
-            <div className="space-y-4">
-              <button onClick={handleSafetyConfirm} className="w-full bg-gray-900 text-white py-5 rounded-3xl text-lg font-black shadow-xl active:scale-95 transition-all flex items-center justify-center gap-3">
-                <CheckCircle2 size={20} className="text-blue-400" />
-                {safetyStep === safetyItems.length - 1 ? '모든 점검 완료' : '확인했습니다'}
-              </button>
-              
-              {safetyStep > 0 && (
-                <button 
-                  onClick={() => setSafetyStep(prev => prev - 1)} 
-                  className="w-full text-gray-400 text-sm font-bold hover:text-gray-600 transition-colors flex items-center justify-center gap-2"
-                >
-                  <ArrowLeft size={14} /> 이전 항목 다시 보기
-                </button>
-              )}
+            <div className="w-full flex gap-3 mt-4">
+              <button onClick={attemptClose} className="flex-1 py-5 bg-gray-100 hover:bg-gray-200 text-gray-500 rounded-2xl font-black transition-colors">취소</button>
+              <button onClick={() => setStep('PLEDGE')} className="flex-[2] py-5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black shadow-lg shadow-blue-200 transition-all active:scale-95">충전 진행하기</button>
             </div>
           </div>
         )}
 
         {step === 'PLEDGE' && (
-          <div className="p-8 pt-4 space-y-6 flex-1 overflow-y-auto no-scrollbar animate-in slide-in-from-bottom-5 duration-500">
-            <div className="flex justify-between items-start">
+          <div className="p-6 pt-4 flex-1 flex flex-col space-y-6 overflow-y-auto no-scrollbar animate-in zoom-in duration-500">
+            <div className="flex justify-between items-start shrink-0">
               <div><h3 className="text-xl font-black text-gray-900 leading-tight">충전 목표 설정</h3><p className="text-gray-400 text-xs mt-1">목표 수치에 따라 보상이 달라집니다.</p></div>
               <BatteryFull className="text-blue-600" size={32} />
             </div>
-            <div className="bg-gray-50 p-6 rounded-[32px] space-y-6 border border-gray-100">
-              <div className="space-y-2"><div className="flex justify-between text-[10px] font-black text-gray-400 uppercase"><span>현재</span><span className="text-blue-600">{currentSoc}%</span></div><input type="range" min="0" max={targetSoc-5} value={currentSoc} onChange={(e) => { const v = parseInt(e.target.value); setCurrentSoc(v); setProgress(v); }} className="w-full h-1 bg-gray-200 appearance-none accent-blue-600 cursor-pointer" /></div>
-              <div className="space-y-2"><div className="flex justify-between text-[10px] font-black text-gray-400 uppercase"><span>목표</span><span className="text-green-600">{targetSoc}%</span></div><input type="range" min={currentSoc+5} max="100" value={targetSoc} onChange={(e) => setTargetSoc(parseInt(e.target.value))} className="w-full h-1 bg-gray-200 appearance-none accent-green-600 cursor-pointer" /></div>
+            
+            <div className="bg-gray-50 p-8 rounded-[40px] space-y-8 border border-gray-100 relative overflow-hidden group shrink-0">
+              <div className="flex justify-between items-end">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Current Status</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-3xl font-black text-blue-600 tracking-tighter">{Math.floor(currentSoc)}%</span>
+                    <div className="px-2 py-0.5 bg-blue-100 rounded-md text-[9px] font-black text-blue-600 animate-pulse">HW SYNC</div>
+                  </div>
+                </div>
+                <div className="h-12 w-[1px] bg-gray-200" />
+                <div className="space-y-1 text-right">
+                  <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Target Goal</span>
+                  <div className="flex items-center justify-end gap-2">
+                    <span className="text-3xl font-black text-green-600 tracking-tighter">{targetSoc}%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4 pt-4 border-t border-gray-100">
+                <div className="flex justify-between text-[10px] font-black text-gray-400 uppercase tracking-tighter px-1">
+                  <span>충전 목표량 조절</span>
+                  <span className="text-green-600">+{(targetSoc - currentSoc)}% 충전 예정</span>
+                </div>
+                <div className="relative pt-1">
+                  <input 
+                    type="range" 
+                    min={Math.min(currentSoc + 1, 95)} 
+                    max="100" 
+                    value={targetSoc} 
+                    onChange={(e) => setTargetSoc(parseInt(e.target.value))} 
+                    className="w-full h-2 bg-gray-200 appearance-none accent-green-600 cursor-pointer rounded-full" 
+                  />
+                  <div className="flex justify-between mt-2 text-[9px] font-bold text-gray-300">
+                    <span>{currentSoc}%</span>
+                    <span>100%</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className={`p-5 rounded-3xl border-2 transition-all ${reward.type === 'MIN' ? 'bg-red-50 border-red-100' : reward.type === 'ECO' ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-100'}`}>
+            <div className={`p-5 rounded-3xl border-2 transition-all shrink-0 ${reward.type === 'MIN' ? 'bg-red-50 border-red-100' : reward.type === 'ECO' ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-100'}`}>
               <div className="flex justify-between items-center mb-2">
                 <span className="text-[10px] font-black text-gray-400 uppercase">{reward.label}</span>
                 <div className="flex items-center gap-1 font-black text-blue-600"><Coins size={14} />{reward.total}P</div>
@@ -411,30 +392,41 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
               <p className="text-[10px] leading-relaxed font-bold text-gray-500">{reward.desc}</p>
             </div>
 
-            <button onClick={handleStartCharging} className="w-full bg-blue-600 text-white py-5 rounded-3xl text-lg font-black shadow-xl active:scale-95 transition-all">충전 시작하기</button>
+            <div className="mt-auto pt-6 shrink-0 pb-4">
+              <button onClick={handleStartCharging} className="w-full bg-blue-600 text-white py-5 rounded-3xl text-lg font-black shadow-xl active:scale-95 transition-all">충전 시작하기</button>
+            </div>
           </div>
         )}
 
         {step === 'CHARGING' && (
-          <div className="p-10 pt-4 flex flex-col items-center text-center space-y-8 animate-in zoom-in duration-500">
-            <div className="relative w-48 h-48">
+          <div className="p-6 pt-4 flex-1 flex flex-col items-center justify-center text-center space-y-10 animate-in zoom-in duration-500">
+            <div className="relative w-64 h-64">
               <svg className="w-full h-full transform -rotate-90">
-                <circle cx="96" cy="96" r="88" className="stroke-gray-100" strokeWidth="16" fill="none" />
-                <circle cx="96" cy="96" r="88" className="stroke-blue-500 transition-all duration-300 ease-out" strokeWidth="16" fill="none" strokeDasharray="552.92" strokeDashoffset={552.92 * (1 - progress / 100)} strokeLinecap="round" />
+                <circle cx="128" cy="128" r="110" className="stroke-gray-100" strokeWidth="20" fill="none" />
+                <circle cx="128" cy="128" r="110" className="stroke-blue-500 transition-all duration-300 ease-out" strokeWidth="20" fill="none" strokeDasharray="691.15" strokeDashoffset={691.15 * (1 - progress / 100)} strokeLinecap="round" />
               </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center"><Zap size={36} className={` ${targetSoc === 100 ? 'text-gray-800' : 'text-blue-600'} mb-2 animate-pulse`} fill="currentColor" /><span className="text-5xl font-black text-gray-900 tracking-tighter">{Math.floor(progress)}%</span></div>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <Zap size={48} className={` ${targetSoc === 100 ? 'text-gray-800' : 'text-blue-600'} mb-2 animate-pulse`} fill="currentColor" />
+                <span className="text-6xl font-black text-gray-900 tracking-tighter">{Math.floor(progress)}%</span>
+              </div>
             </div>
-            <h3 className="text-xl font-black text-gray-900 italic uppercase">Charging to {targetSoc}%</h3>
+            <div className="space-y-2 px-8">
+              <h3 className="text-2xl font-black text-gray-900 italic uppercase">Charging...</h3>
+              <p className="text-sm text-gray-400 font-bold tracking-widest uppercase">Target: {targetSoc}%</p>
+            </div>
           </div>
         )}
 
         {step === 'BILLING' && (
-          <div className="p-8 pt-4 space-y-6 animate-in slide-in-from-bottom-5 duration-500 overflow-y-auto no-scrollbar max-h-[70vh]">
-            <div className="flex justify-between items-center"><h3 className="text-2xl font-black text-gray-900 italic uppercase">Billing</h3><div className="bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-[10px] font-black tracking-tighter">RECEIPT</div></div>
+          <div className="p-6 pt-4 flex-1 flex flex-col space-y-6 animate-in zoom-in duration-500 overflow-y-auto no-scrollbar">
+            <div className="flex justify-between items-center shrink-0">
+                <h3 className="text-2xl font-black text-gray-900 italic uppercase">Billing</h3>
+                <div className="bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-[10px] font-black tracking-tighter">RECEIPT</div>
+            </div>
             
-            <div className="bg-gray-50 rounded-3xl p-6 border-2 border-dashed border-gray-200 space-y-4">
-              <div className="flex justify-between items-center text-sm"><span className="text-gray-500 font-bold">이용 요금 합계</span><span className="text-gray-900 font-black">{totalPrice.toLocaleString()}원</span></div>
-              <div className="space-y-3 pt-2 border-t border-gray-200">
+            <div className="bg-gray-50 rounded-[40px] p-8 border-2 border-dashed border-gray-200 space-y-5 shrink-0">
+              <div className="flex justify-between items-center text-sm"><span className="text-gray-500 font-bold">이용 요금 합계</span><span className="text-gray-900 font-black text-lg">{totalPrice.toLocaleString()}원</span></div>
+              <div className="space-y-3 pt-4 border-t border-gray-200">
                 <div className="flex justify-between items-center">
                   <span className="text-gray-500 font-bold text-sm">마일리지 할인</span>
                   <div className="flex items-center gap-2">
@@ -446,73 +438,77 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ station, o
                         setUsedMileage(val);
                       }} 
                       placeholder="0" 
-                      className="w-24 px-3 py-1 text-right bg-white border border-gray-200 rounded-lg text-sm font-black focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                      className="w-24 px-3 py-2 text-right bg-white border border-gray-200 rounded-xl text-sm font-black focus:outline-none focus:ring-2 focus:ring-blue-500" 
                     />
-                    <span className="text-[10px] font-black text-gray-400">P</span>
+                    <span className="text-xs font-black text-gray-400">P</span>
                   </div>
                 </div>
-                <div className="flex justify-end gap-2">
-                  <span className="text-[10px] font-bold text-gray-400">보유: {(user?.mileage_balance || 0).toLocaleString()}P</span>
-                  <button onClick={() => setUsedMileage(Math.min(user?.mileage_balance || 0, totalPrice))} className="text-[10px] font-black text-blue-600 underline underline-offset-2">전액 사용</button>
+                <div className="flex justify-end gap-3">
+                  <span className="text-[11px] font-bold text-gray-400 tracking-tight">보유: {(user?.mileage_balance || 0).toLocaleString()}P</span>
+                  <button onClick={() => setUsedMileage(Math.min(user?.mileage_balance || 0, totalPrice))} className="text-[11px] font-black text-blue-600 underline underline-offset-4">전액 사용</button>
                 </div>
               </div>
-              <div className="flex justify-between items-center pt-4 border-t-2 border-gray-900"><span className="text-lg font-black text-gray-900">최종 결제 금액</span><span className="text-2xl font-black text-blue-600">{(totalPrice - usedMileage).toLocaleString()}원</span></div>
+              <div className="flex justify-between items-center pt-6 border-t-2 border-gray-900"><span className="text-xl font-black text-gray-900">최종 결제</span><span className="text-3xl font-black text-blue-600">{(totalPrice - usedMileage).toLocaleString()}원</span></div>
             </div>
 
-            <div className="bg-blue-50/50 p-5 rounded-3xl border border-blue-100 flex flex-col items-center gap-3">
+            <div className="bg-blue-50/50 p-6 rounded-3xl border border-blue-100 flex flex-col items-center gap-3 shrink-0">
               <div className="flex items-center gap-2 text-blue-600 font-black text-sm uppercase tracking-tighter">
-                <Lock size={16} /> Secure Payment Ready
+                <Lock size={18} /> Secure Payment Ready
               </div>
-              <p className="text-[10px] text-blue-700/60 font-medium text-center">결제하기 버튼을 누르면 토스페이먼츠 안전 결제창이 열립니다.</p>
+              <p className="text-[11px] text-blue-700/60 font-medium text-center leading-relaxed">토스페이먼츠 보안 모듈을 통해<br/>안전하게 결제가 진행됩니다.</p>
             </div>
 
-            <button onClick={handlePayment} disabled={isProcessingPayment} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white py-5 rounded-3xl text-lg font-black shadow-xl shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-3">
-              {isProcessingPayment ? <><Loader2 size={24} className="animate-spin" /> 처리 중...</> : <><Zap size={20} fill="currentColor" /> 결제창 열기</>}
-            </button>
+            <div className="mt-auto pt-6 shrink-0 pb-4">
+              <button onClick={handlePayment} disabled={isProcessingPayment} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white py-5 rounded-3xl text-lg font-black shadow-xl shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-3">
+                {isProcessingPayment ? <><Loader2 size={24} className="animate-spin" /> 처리 중...</> : <><Zap size={20} fill="currentColor" /> 결제창 열기</>}
+              </button>
+            </div>
           </div>
         )}
 
         {step === 'WAITING_EXIT' && (
-          <div className="p-10 pt-4 flex flex-col items-center text-center space-y-8 animate-in fade-in zoom-in duration-500">
+          <div className="p-6 pt-4 flex-1 flex flex-col items-center justify-center text-center space-y-10 animate-in zoom-in duration-500">
             <div className="relative">
-              <div className={`w-32 h-32 rounded-full flex items-center justify-center relative z-10 ${isConnectorDisconnected ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
-                {isConnectorDisconnected ? <Car size={64} className="animate-bounce" /> : <Plug2 size={64} className="animate-pulse" />}
+              <div className={`w-40 h-48 rounded-[48px] flex items-center justify-center relative z-10 transition-colors duration-500 ${isConnectorDisconnected ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                {isConnectorDisconnected ? <Car size={80} className="animate-bounce" /> : <Plug2 size={80} className="animate-pulse" />}
               </div>
-              <div className={`absolute inset-0 rounded-full animate-ping opacity-20 ${isConnectorDisconnected ? 'bg-green-400' : 'bg-blue-400'}`}></div>
+              <div className={`absolute inset-0 rounded-[48px] animate-ping opacity-10 ${isConnectorDisconnected ? 'bg-green-400' : 'bg-blue-400'}`}></div>
             </div>
-            <div className="space-y-2">
-              <h3 className="text-2xl font-black text-gray-900 italic uppercase">{isConnectorDisconnected ? '출차 대기 중' : '커넥터 분리 안내'}</h3>
-              <p className="text-sm text-gray-400 leading-relaxed">
-                {isConnectorDisconnected ? '커넥터 분리가 확인되었습니다. 출차해 주세요.' : '차량에서 커넥터를 분리해 주세요.'}
+            <div className="space-y-4 px-6">
+              <h3 className="text-3xl font-black text-gray-900 italic uppercase tracking-tighter">{isConnectorDisconnected ? '출차 대기 중' : '커넥터 분리'}</h3>
+              <p className="text-base text-gray-400 font-medium leading-relaxed">
+                {isConnectorDisconnected ? '커넥터 분리가 확인되었습니다.\n안전하게 출차해 주세요.' : '차량에서 커넥터를\n안전하게 분리해 주세요.'}
               </p>
             </div>
-            <div className="w-full bg-gray-50 p-5 rounded-3xl flex items-center justify-center gap-3 font-black text-gray-400 uppercase text-xs tracking-tighter border border-gray-100"><Loader2 className="animate-spin text-blue-500" size={18} /> H/W SENSOR LIVE MONITORING</div>
+            <div className="w-full max-w-xs bg-gray-50 p-5 rounded-3xl flex items-center justify-center gap-3 font-black text-gray-400 uppercase text-[10px] tracking-widest border border-gray-100 italic"><Loader2 className="animate-spin text-blue-500" size={16} /> H/W Sensor Monitoring</div>
           </div>
         )}
 
         {step === 'SUCCESS' && (
-          <div className="p-10 flex flex-col items-center text-center space-y-6 animate-in zoom-in duration-500">
-            <div className="bg-green-100 p-6 rounded-full text-green-600 animate-bounce"><CheckCircle2 size={64} /></div>
+          <div className="p-6 flex-1 flex flex-col items-center text-center space-y-6 overflow-y-auto no-scrollbar animate-in zoom-in duration-500">
+            <div className="bg-green-100 p-6 rounded-[32px] text-green-600 animate-bounce shadow-lg shadow-green-100 mt-4"><CheckCircle2 size={64} /></div>
             <div className="space-y-2">
-              <h3 className="text-2xl font-black text-gray-900">충전 및 결제 완료!</h3>
-              <p className="text-sm text-gray-400 font-medium">안전하게 출차가 완료되었습니다.</p>
+              <h3 className="text-2xl font-black text-gray-900 tracking-tight">서비스 이용 완료!</h3>
+              <p className="text-sm text-gray-400 font-medium">안전하게 출차가 완료되었습니다.<br/>방문해 주셔서 감사합니다.</p>
             </div>
             
-            <div className="w-full bg-gray-50 rounded-3xl p-6 border border-gray-100 space-y-4">
-              <div className="flex justify-between items-center text-xs font-bold text-gray-500 uppercase tracking-tighter">
+            <div className="w-full bg-gray-50 rounded-[32px] p-6 border border-gray-100 space-y-4 shadow-inner">
+              <div className="flex justify-between items-center text-[10px] font-bold text-gray-400 uppercase tracking-widest">
                 <span>총 획득 보상</span>
                 <Coins size={14} className="text-blue-500" />
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-gray-900 font-black">적립 마일리지</span>
+                <span className="text-gray-900 font-black text-base">적립 마일리지</span>
                 <span className="text-blue-600 font-black text-2xl">{reward.total.toLocaleString()} P</span>
               </div>
-              <p className="text-[10px] text-gray-400 font-bold leading-relaxed text-left border-t border-gray-100 pt-3">
-                * 기본 보상 및 매너 출차 보너스가 포함된 금액입니다.
+              <p className="text-[10px] text-gray-400 font-bold leading-relaxed text-left border-t border-gray-200 pt-3 px-1">
+                * 기본 보상 및 매너 출차 보너스가<br/>포함된 금액입니다.
               </p>
             </div>
 
-            <button onClick={() => { onComplete(reward.total); onClose(); }} className="w-full bg-blue-600 text-white py-5 rounded-3xl text-lg font-black shadow-xl active:scale-95 transition-all">완료</button>
+            <div className="mt-auto pt-4 w-full shrink-0 pb-2">
+              <button onClick={() => { onComplete(reward.total); onClose(); }} className="w-full bg-blue-600 text-white py-4 rounded-3xl text-lg font-black shadow-xl active:scale-95 transition-all">완료</button>
+            </div>
           </div>
         )}
       </div>

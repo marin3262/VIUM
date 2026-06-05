@@ -44,7 +44,7 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
     fetchRoute, 
     routeSummary, 
     clearRoute,
-    setUserLocation, // 누락되었던 함수 추가
+    setUserLocation, 
     isLoading: isRouteLoading 
   } = useStationStore();
   const availableSlots = getAvailableSlots(station);
@@ -94,9 +94,8 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
           station.station_name
         );
         
-        // UX 개편: 경로 탐색 완료 시 모달을 닫고 지도를 보여줌
         onShowOnMap();
-        onClose(); // 모달 닫기 추가
+        onClose();
       },
       (error) => {
         console.error("Geolocation Error:", error);
@@ -106,24 +105,24 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
     );
   };
 
-  // 모달 닫을 때 경로 정보 초기화
   const handleClose = () => {
     clearRoute();
     onClose();
   };
 
-  // 2. 요금 그래프 데이터 로직
   const displayPriceHistory = useMemo(() => {
     let history = station.priceHistory;
     if (typeof history === 'string') {
       try { history = JSON.parse(history); } catch (e) { history = []; }
     }
     if (!Array.isArray(history) || history.length < 24) {
-      const base = station.price || 300;
+      const base = station.price || 340;
       return Array.from({ length: 24 }, (_, i) => {
-        if (i <= 6) return base - 60; 
-        if (i >= 11 && i <= 15) return base + 50;
-        return base + (i % 2 === 0 ? 15 : -15);
+        // 전통적 부하(Peak-load) 모델: 심야 저가, 점심/저녁 피크
+        if (i >= 23 || i <= 7) return base - 70; // 심야/새벽 경부하 (최저)
+        if ((i >= 11 && i <= 13) || (i >= 18 && i <= 20)) return base + 60; // 점심 및 저녁 피크 (최고)
+        if ((i >= 8 && i <= 10) || (i >= 14 && i <= 17) || (i >= 21 && i <= 22)) return base + (i % 2 === 0 ? 5 : -5); // 중간 부하
+        return base;
       });
     }
     return history;
@@ -133,24 +132,21 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
   const maxPrice = Math.max(...displayPriceHistory);
   const priceRange = (maxPrice - minPrice) || 100;
 
-  // 3. 리뷰 정렬 및 필터링 (최신순, 노출 상태만)
   const sortedReviews = useMemo(() => {
     if (!station.reviews) return [];
     return [...station.reviews]
-      .filter(review => review.status === 'VISIBLE') // 관리자가 숨긴 리뷰 제외
+      .filter(review => review.status === 'VISIBLE')
       .sort((a, b) => 
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
   }, [station.reviews]);
 
-  // 4. 평균 평점 계산 (실시간 반영)
   const avgRating = useMemo(() => {
     if (sortedReviews.length === 0) return "0.0";
     const total = sortedReviews.reduce((acc, r) => acc + r.rating, 0);
     return (total / sortedReviews.length).toFixed(1);
   }, [sortedReviews]);
 
-  // [정밀 관제 UI] 상태별 스타일 맵
   const statusConfig: Record<StationStatus, { label: string, color: string, bg: string, icon: any, anim?: string }> = {
     'Available': { label: '사용 가능', color: 'text-green-600', bg: 'bg-green-50', icon: Power },
     'Occupied': { label: '주차 중 (비충전)', color: 'text-orange-500', bg: 'bg-orange-50', icon: Car },
@@ -159,22 +155,21 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className="bg-white w-full max-w-lg rounded-t-[40px] sm:rounded-[40px] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-10 duration-500 max-h-[95vh] flex flex-col">
-        {/* Header */}
-        <div className="relative min-h-[160px] bg-gradient-to-br from-blue-600 to-indigo-700 p-8 flex flex-col justify-end shrink-0">
-          <button onClick={handleClose} className="absolute top-6 right-6 p-2 bg-white/20 hover:bg-white/30 rounded-full text-white transition-all"><X size={20} /></button>
+    <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center p-0 lg:p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
+      <div className="bg-white w-full max-w-lg h-[100dvh] lg:h-auto lg:max-h-[95vh] rounded-t-[40px] lg:rounded-[40px] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-10 lg:slide-in-from-bottom-0 lg:zoom-in-95 duration-500 flex flex-col">
+        
+        <div className="relative min-h-[140px] lg:min-h-[160px] bg-gradient-to-br from-blue-600 to-indigo-700 p-6 lg:p-8 flex flex-col justify-end shrink-0">
+          <button onClick={handleClose} className="absolute top-4 right-4 lg:top-6 lg:right-6 p-2 bg-white/20 hover:bg-white/30 rounded-full text-white transition-all z-10"><X size={20} /></button>
           <div className="space-y-2 pr-10">
-            <h2 className="text-2xl font-black text-white leading-tight break-keep">{station.station_name}</h2>
-            <p className="text-blue-100/80 text-xs flex items-start gap-1.5 leading-relaxed">
+            <h2 className="text-xl lg:text-2xl font-black text-white leading-tight break-keep">{station.station_name}</h2>
+            <p className="text-blue-100/80 text-[10px] lg:text-xs flex items-start gap-1.5 leading-relaxed">
               <MapPin size={14} className="shrink-0 mt-0.5" /> 
               <span>{station.address}</span>
             </p>
           </div>
         </div>
 
-        <div className="p-6 space-y-6 overflow-y-auto no-scrollbar">
-          {/* Status Grid */}
+        <div className="p-6 space-y-6 overflow-y-auto no-scrollbar flex-1 pb-32 lg:pb-8">
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-blue-50 p-3 rounded-2xl border border-blue-100 flex flex-col items-center">
               <Zap className="text-blue-600 mb-1" size={18} />
@@ -193,7 +188,6 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
             </div>
           </div>
 
-          {/* [정밀 관제 로직 2.2] 실시간 충전기 현황 그리드 */}
           <div className="space-y-4">
             <h3 className="text-sm font-black text-gray-900 flex items-center gap-2 px-1">
               <Activity size={16} className="text-blue-500" /> 실시간 충전기 현황
@@ -232,7 +226,6 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
             </div>
           </div>
 
-          {/* 요금 그래프 */}
           <div className="space-y-4 bg-gray-50 p-5 rounded-[32px] border border-gray-100">
             <div className="flex justify-between items-end">
               <h3 className="text-sm font-black text-gray-900 flex items-center gap-2"><TrendingUp size={16} className="text-blue-500" /> 24시간 요금 추이</h3>
@@ -256,13 +249,18 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
                       }} 
                       className={`rounded-t-sm transition-all duration-500 ${isCurrentHour ? 'shadow-[0_-2px_8px_rgba(37,99,235,0.4)]' : 'hover:bg-blue-300'}`}
                     ></div>
+                    {[0, 6, 12, 18, 23].includes(i) && (
+                      <span className="absolute -bottom-5 text-[9px] font-black text-gray-400">
+                        {i.toString().padStart(2, '0')}
+                      </span>
+                    )}
                   </div>
                 );
               })}
             </div>
+            <div className="h-2"></div>
           </div>
 
-          {/* 커뮤니티 리뷰 섹션 */}
           <div className="space-y-4">
             <h3 className="text-sm font-black text-gray-900 flex items-center gap-2 px-1">
               <MessageSquare size={16} className="text-blue-500" /> 커뮤니티 리뷰 ({sortedReviews.length})
@@ -299,7 +297,6 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
             </div>
           </div>
 
-          {/* Buttons */}
           <div className="flex gap-2 pt-2">
             <button 
               onClick={onShowOnMap}

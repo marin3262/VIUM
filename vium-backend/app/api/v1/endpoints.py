@@ -184,7 +184,7 @@ def update_review_status_admin(
             if update_in.status == "HIDDEN" and review.status == "VISIBLE":
                 user.trust_score = max(0, user.trust_score - 10)
             elif update_in.status == "VISIBLE" and review.status == "HIDDEN":
-                user.trust_score += 10
+                user.trust_score = min(100, user.trust_score + 10)
 
     review.status = update_in.status
     db.commit()
@@ -246,7 +246,7 @@ def update_report_status(
             # 승인 시 보상 지급 (500P) 및 신뢰도 +5점
             reward = 500
             user.mileage_balance += reward
-            user.trust_score += 5
+            user.trust_score = min(100, user.trust_score + 5)
 
             db.add(models.MileageLog(
                 user_id=user.user_id,

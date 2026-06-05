@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Zap, Star, ChevronRight, Coins } from 'lucide-react';
 import type { ChargingStation } from '../../types';
 import { useStationStore } from '../../store/stationStore';
@@ -9,13 +9,35 @@ interface StationCardProps {
 }
 
 export const StationCard: React.FC<StationCardProps> = ({ station, onClick }) => {
-  const { getAvailableSlots } = useStationStore();
+  const { getAvailableSlots, userLocation } = useStationStore();
   
   const availableSlots = getAvailableSlots(station);
   const totalSlots = station.chargers.length;
   
   // 전체 상태 결정
   const displayStatus = availableSlots > 0 ? 'Available' : (station.chargers.some(c => c.status === 'Charging') ? 'Charging' : 'Faulty');
+
+  // 실시간 거리 계산 (Haversine)
+  const displayDistance = useMemo(() => {
+    if (!userLocation || !station.latitude || !station.longitude) return station.distance || '- km';
+    
+    const lat1 = userLocation.lat;
+    const lon1 = userLocation.lng;
+    const lat2 = Number(station.latitude);
+    const lon2 = Number(station.longitude);
+    
+    const R = 6371; // km
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distance = R * c;
+    
+    return distance < 1 ? `${Math.round(distance * 1000)}m` : `${distance.toFixed(1)}km`;
+  }, [userLocation, station.latitude, station.longitude, station.distance]);
 
   return (
     <div 
@@ -28,7 +50,6 @@ export const StationCard: React.FC<StationCardProps> = ({ station, onClick }) =>
             displayStatus === 'Available' ? 'bg-green-100 text-green-600' :
             displayStatus === 'Charging' ? 'bg-blue-100 text-blue-600' : 'bg-red-100 text-red-600'
           }`}>
-            {/* 라이브 상태 점 애니메이션 (글씨보다 강력한 신호) */}
             <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${
               displayStatus === 'Available' ? 'bg-green-500' :
               displayStatus === 'Charging' ? 'bg-blue-500' : 'bg-red-500'
@@ -36,7 +57,7 @@ export const StationCard: React.FC<StationCardProps> = ({ station, onClick }) =>
             {displayStatus === 'Available' ? '이용 가능' : displayStatus === 'Charging' ? '충전 중' : '점검 중'}
           </div>
         </div>
-        <span className="text-[11px] font-black text-gray-300 uppercase tracking-tighter">{station.distance || '- km'}</span>
+        <span className="text-[11px] font-black text-blue-500 uppercase tracking-tighter">{displayDistance}</span>
       </div>
 
       <div className="mb-4">
@@ -64,11 +85,10 @@ export const StationCard: React.FC<StationCardProps> = ({ station, onClick }) =>
           </div>
           <div className="flex items-center gap-1.5">
             <Coins size={14} className="text-orange-500" />
-            <span className="text-sm font-black text-gray-900">{station.price || 300}<span className="text-[10px] text-gray-300 ml-0.5 font-bold">원</span></span>
+            <span className="text-sm font-black text-gray-900">{station.price || 340}<span className="text-[10px] text-gray-300 ml-0.5 font-bold">원</span></span>
           </div>
         </div>
         
-        {/* 설명이 필요 없는 직관적인 이동 아이콘 */}
         <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-400 group-hover:bg-blue-600 group-hover:text-white transition-all transform group-hover:translate-x-1">
           <ChevronRight size={18} />
         </div>

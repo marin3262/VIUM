@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Zap, Bell, ShieldCheck, User, LogOut, LogIn, UserCircle } from 'lucide-react';
+import { Zap, Bell, ShieldCheck, User, LogOut, LogIn, UserCircle, FileText } from 'lucide-react';
 import { useUserStore } from '../../store/userStore';
 import { useNotificationStore } from '../../store/notificationStore';
 import { NotificationPanel } from '../reward/NotificationPanel';
@@ -8,10 +8,11 @@ interface HeaderProps {
   isAdmin: boolean;
   onToggleAdmin: () => void;
   onOpenAuth: () => void;
-  onOpenMyPage: () => void; // 마이페이지 오픈 액션 추가
+  onOpenMyPage: () => void;
+  onOpenPolicy: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ isAdmin, onToggleAdmin, onOpenAuth, onOpenMyPage }) => {
+export const Header: React.FC<HeaderProps> = ({ isAdmin, onToggleAdmin, onOpenAuth, onOpenMyPage, onOpenPolicy }) => {
   const { user, isAuthenticated, logout } = useUserStore();
   const { notifications } = useNotificationStore();
   const [isNotiOpen, setIsNotiOpen] = useState(false);
@@ -32,6 +33,13 @@ export const Header: React.FC<HeaderProps> = ({ isAdmin, onToggleAdmin, onOpenAu
         </div>
 
         <div className="flex items-center gap-4">
+          <button 
+            onClick={onOpenPolicy}
+            className="hidden md:flex items-center gap-2 px-4 py-2 text-gray-500 hover:text-blue-600 font-black text-xs transition-all"
+          >
+            <FileText size={16} /> 이용 정책
+          </button>
+
           {isAuthenticated && user?.is_admin && (
             <button 
               onClick={onToggleAdmin}

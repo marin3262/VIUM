@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Zap, CheckCircle2, Loader2, Car, Plug2, BatteryFull, Bell, BellRing } from 'lucide-react';
+import { Zap, CheckCircle2, Loader2, Car, Plug2, BatteryFull, Bell, BellRing, X } from 'lucide-react';
 import { stationService } from '../../services/stationService';
 import { usePushNotification } from '../../hooks/usePushNotification';
 import { useNotificationStore } from '../../store/notificationStore';
@@ -53,6 +53,12 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
             setIsSubscribed(true);
             sessionStorage.setItem('vium_guest_is_subscribed', 'true');
         }
+    }
+  };
+
+  const handleExit = () => {
+    if (window.confirm('충전 페이지를 나가시겠습니까?')) {
+        window.location.href = '/';
     }
   };
 
@@ -147,7 +153,8 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
             }
 
             const chargedPercent = targetSoc - Math.round(currentSoc);
-            const calculatedPrice = Math.max(0, chargedPercent * 200);
+            // 실제 요금표 반영 (2026 급속 평균가 340원 단가 적용)
+            const calculatedPrice = Math.max(0, chargedPercent * 340);
             setTotalPrice(calculatedPrice);
             setStep('BILLING');
             return targetSoc;
@@ -312,17 +319,24 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 font-sans text-gray-900">
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl overflow-hidden flex flex-col">
-        {/* 이전의 화려한 Gradient Header 복구 */}
-        <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-8 text-center">
+    <div className="min-h-[100dvh] bg-gray-50 flex flex-col font-sans text-gray-900 overflow-hidden">
+      <div className={`flex-1 w-full max-w-md mx-auto bg-white shadow-xl flex flex-col relative`}>
+        
+        {/* Header with Exit Button */}
+        <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-8 text-center shrink-0 relative">
+            <button 
+              onClick={handleExit}
+              className="absolute top-6 right-6 p-2 bg-white/20 hover:bg-white/30 rounded-full text-white transition-all active:scale-90"
+            >
+              <X size={20} />
+            </button>
             <h2 className="text-2xl font-black text-white tracking-tight">비회원 충전 결제</h2>
             <p className="text-blue-100 mt-2 text-sm font-medium">{station.station_name} - {chargerId.split('_').pop()}호기</p>
         </div>
         
-        <div className="p-8 flex flex-col items-center justify-center flex-1 min-h-[400px]">
+        <div className="p-6 md:p-8 flex-1 flex flex-col overflow-y-auto no-scrollbar pb-12">
             {step === 'CONNECTION_PROMPT' && (
-                <div className="text-center space-y-6 animate-in fade-in zoom-in duration-500">
+                <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6 animate-in fade-in zoom-in duration-500">
                     <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mx-auto animate-bounce">
                         <Plug2 size={48} className="text-blue-500" />
                     </div>
@@ -334,10 +348,10 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
             )}
 
             {step === 'CONFIRM_CHARGE' && (
-                <div className="w-full space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="text-center">
-                        <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <BatteryFull size={40} className="text-indigo-500" />
+                <div className="flex-1 flex flex-col space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="text-center pt-2">
+                        <div className="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <BatteryFull size={32} className="text-indigo-500" />
                         </div>
                         <h3 className="text-2xl font-black text-gray-900">차량 연결 확인됨</h3>
                         <p className="text-sm text-gray-500 mt-1 font-medium">현재 배터리 잔량과 목표를 확인해 주세요.</p>
@@ -370,7 +384,7 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
                         </div>
                     </div>
 
-                    <div className="w-full space-y-3">
+                    <div className="mt-auto space-y-3 pt-4">
                         <button
                             onClick={handlePushToggle}
                             disabled={isSubscribing}
@@ -401,7 +415,7 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
             )}
 
             {step === 'CHARGING' && (
-                <div className="w-full text-center space-y-8 animate-in zoom-in-95 duration-500">
+                <div className="flex-1 flex flex-col items-center justify-center text-center space-y-8 animate-in zoom-in-95 duration-500">
                     <div className="relative w-48 h-48 mx-auto">
                         <svg className="w-full h-full transform -rotate-90">
                             <circle cx="96" cy="96" r="88" className="stroke-gray-100" strokeWidth="16" fill="none" />
@@ -421,7 +435,7 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
             )}
 
             {step === 'BILLING' && (
-                <div className="w-full space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="flex-1 flex flex-col space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <div className="text-center space-y-1">
                         <h3 className="text-2xl font-black text-gray-900 uppercase italic tracking-tighter">Billing</h3>
                         <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Guest Receipt</p>
@@ -443,19 +457,21 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
                         </div>
                     </div>
 
-                    <button 
-                        onClick={handlePayment} 
-                        disabled={isProcessingPayment}
-                        className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black shadow-xl shadow-blue-100 active:scale-95 transition-all flex justify-center items-center gap-3 disabled:bg-gray-300"
-                    >
-                        {isProcessingPayment ? <Loader2 className="animate-spin" size={24} /> : <><Zap size={20} fill="currentColor" /> 결제하기</>}
-                    </button>
-                    <p className="text-[10px] text-gray-400 text-center font-bold">결제 버튼 클릭 시 토스페이먼츠 안전 결제창으로 연결됩니다.</p>
+                    <div className="mt-auto pt-4 space-y-3 pb-8">
+                        <button 
+                            onClick={handlePayment} 
+                            disabled={isProcessingPayment}
+                            className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black shadow-xl shadow-blue-100 active:scale-95 transition-all flex justify-center items-center gap-3 disabled:bg-gray-300"
+                        >
+                            {isProcessingPayment ? <Loader2 className="animate-spin" size={24} /> : <><Zap size={20} fill="currentColor" /> 결제하기</>}
+                        </button>
+                        <p className="text-[10px] text-gray-400 text-center font-bold">결제 버튼 클릭 시 토스페이먼츠 안전 결제창으로 연결됩니다.</p>
+                    </div>
                 </div>
             )}
 
             {step === 'WAITING_EXIT' && (
-                <div className="w-full text-center space-y-8 animate-in fade-in duration-500">
+                <div className="flex-1 flex flex-col items-center justify-center text-center space-y-8 animate-in fade-in duration-500">
                     <div className="relative">
                         <div className="w-24 h-24 bg-green-50 rounded-full flex items-center justify-center mx-auto relative z-10 border border-green-100">
                             <CheckCircle2 size={48} className="text-green-500 animate-bounce" />
@@ -487,24 +503,25 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
             )}
 
             {step === 'SUCCESS' && (
-                <div className="w-full text-center space-y-8 animate-in fade-in zoom-in duration-500">
-                    <div className="w-28 h-24 bg-blue-600 rounded-[40px] flex items-center justify-center mx-auto shadow-2xl shadow-blue-200 rotate-3">
-                        <Car size={56} className="text-white -rotate-3" />
+                <div className="flex-1 flex flex-col items-center text-center space-y-4 animate-in fade-in zoom-in duration-500 py-4 overflow-y-auto no-scrollbar">
+                    <div className="w-20 h-16 bg-blue-600 rounded-[28px] flex items-center justify-center mx-auto shadow-2xl shadow-blue-200 rotate-3 mt-4 shrink-0">
+                        <Car size={40} className="text-white -rotate-3" />
                     </div>
-                    <div className="space-y-2">
-                        <h3 className="text-3xl font-black text-gray-900 tracking-tighter italic uppercase">안녕히 가세요!</h3>
-                        <p className="text-sm text-gray-500 font-medium">안전하게 출차가 확인되었습니다.<br/>오늘도 VIUM과 함께 쾌적한 드라이빙 되세요.</p>
+                    <div className="space-y-1 shrink-0">
+                        <h3 className="text-2xl font-black text-gray-900 tracking-tighter italic uppercase">안녕히 가세요!</h3>
+                        <p className="text-xs text-gray-500 font-medium px-6 leading-relaxed">안전하게 출차가 확인되었습니다.<br/>오늘도 VIUM과 함께 쾌적한 드라이빙 되세요.</p>
                     </div>
                     
-                    {/* 이전의 UI 혜택 배너 복구 */}
-                    <div className="mt-8 pt-8 border-t border-gray-100 w-full">
-                        <div className="bg-indigo-50/50 p-6 rounded-[32px] border border-indigo-100 mb-6">
-                            <p className="text-sm font-black text-indigo-600 mb-1">🎁 지금 회원가입 하시면</p>
-                            <p className="text-xs text-indigo-400 font-bold">첫 충전 1,000P 즉시 지급 및 알림 혜택</p>
+                    <div className="w-full pt-4 mt-auto border-t border-gray-100 flex flex-col gap-4">
+                        <div className="bg-indigo-50/50 p-5 rounded-[28px] border border-indigo-100 text-left mx-2">
+                            <p className="text-[11px] font-black text-indigo-600 mb-1">🎁 지금 회원가입 하시면</p>
+                            <p className="text-[10px] text-indigo-400 font-bold leading-tight">첫 충전 1,000P 즉시 지급 및 실시간 알림 혜택을 드립니다.</p>
                         </div>
-                        <a href="/" className="inline-block w-full py-5 bg-gray-900 text-white rounded-3xl font-black shadow-xl active:scale-95 transition-all hover:bg-black text-lg">
-                            VIUM 앱으로 이동
-                        </a>
+                        <div className="px-2 pb-6">
+                          <a href="/" className="inline-block w-full py-5 bg-gray-900 text-white rounded-3xl font-black shadow-xl active:scale-95 transition-all hover:bg-black text-lg text-center">
+                              메인 화면으로 돌아가기
+                          </a>
+                        </div>
                     </div>
                 </div>
             )}

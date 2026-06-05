@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
-  Maximize2, Minimize2, ArrowRight
+  Maximize2, Minimize2, ArrowRight, Filter, SlidersHorizontal, X
 } from 'lucide-react';
 
 import { useStationStore } from './store/stationStore';
@@ -25,6 +25,7 @@ import { StationSummaryOverlay } from './components/station/StationSummaryOverla
 import { ChargingFlowModal } from './components/station/ChargingFlowModal';
 import { GuestChargePage } from './components/guest/GuestChargePage';
 import { AdminDashboard } from './components/admin/AdminDashboard';
+import { PolicyModal } from './components/layout/PolicyModal';
 import type { ChargingStation } from './types';
 
 function App() {
@@ -38,6 +39,7 @@ function App() {
     setReportTargetId,
     summaryStationId,
     setSummaryStationId,
+    routeSummary,
     isLoading: isStationsLoading
   } = store;
 
@@ -84,12 +86,29 @@ function App() {
     }
   }, [addNotification, user, isAuthenticated]);
 
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          store.setUserLocation({ lat: latitude, lng: longitude });
+        },
+        (error) => {
+          console.warn("Geolocation not available or denied:", error);
+        },
+        { enableHighAccuracy: true }
+      );
+    }
+  }, []);
+
   const [visibleCount, setVisibleCount] = useState(12);
   const [isMapExpanded, setIsMapExpanded] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isMyPageOpen, setIsMyPageOpen] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false); // 신규: 필터 시트 상태
   const [chargingTargetId, setChargingTargetId] = useState<string | null>(null);
   const [chargingInitialStep, setChargingInitialStep] = useState<'CONNECTION_PROMPT' | 'BILLING'>('CONNECTION_PROMPT');
   const [guestChargerId, setGuestChargerId] = useState<string | null>(null);
@@ -223,13 +242,45 @@ function App() {
     }
   }, [isAdminMode, user]);
 
+  const handleNavClick = useCallback((action: () => void) => {
+    // [Issue 2 해결] 모든 오버레이/모달 닫기
+    setSelectedStationId(null);
+    setSummaryStationId(null);
+    setReportTargetId(null);
+    setIsMyPageOpen(false);
+    setIsPolicyModalOpen(false);
+    setIsFilterSheetOpen(false);
+    action();
+  }, [setSelectedStationId, setSummaryStationId, setReportTargetId]);
+
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50 text-gray-900 font-sans">
+    <div className="flex flex-col min-h-[100dvh] bg-gray-50 text-gray-900 font-sans">
       <RewardToast show={rewardToast.show} amount={rewardToast.amount} />
       <NotificationOverlay isAdminMode={isAdminMode} />
       {isAuthModalOpen && <AuthModal onClose={() => setIsAuthModalOpen(false)} />}
       {isMyPageOpen && <MyPage onClose={() => setIsMyPageOpen(false)} />}
+      {isPolicyModalOpen && <PolicyModal onClose={() => setIsPolicyModalOpen(false)} />}
       
+      {/* Mobile Filter Bottom Sheet */}
+      {isFilterSheetOpen && (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center p-0 animate-in fade-in duration-300 md:hidden">
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setIsFilterSheetOpen(false)}></div>
+          <div className="relative bg-white w-full rounded-t-[40px] shadow-2xl p-8 animate-in slide-in-from-bottom-10 duration-500">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-gray-900">검색 및 필터</h3>
+              <button onClick={() => setIsFilterSheetOpen(false)} className="p-2 bg-gray-100 rounded-full text-gray-400"><X size={18} /></button>
+            </div>
+            <PillFilter />
+            <button 
+              onClick={() => setIsFilterSheetOpen(false)}
+              className="w-full bg-blue-600 text-white py-4 rounded-3xl font-black mt-8 shadow-xl shadow-blue-100 active:scale-95 transition-all"
+            >
+              필터 적용하기
+            </button>
+          </div>
+        </div>
+      )}
+
       {guestChargerId ? (
         <GuestChargePage chargerId={guestChargerId} />
       ) : (
@@ -260,9 +311,10 @@ function App() {
           
           <Header 
             isAdmin={isAdminMode} 
-            onToggleAdmin={() => setIsAdminMode(!isAdminMode)} 
+            onToggleAdmin={() => handleNavClick(() => setIsAdminMode(!isAdminMode))} 
             onOpenAuth={() => setIsAuthModalOpen(true)} 
-            onOpenMyPage={() => setIsMyPageOpen(true)} 
+            onOpenMyPage={() => handleNavClick(() => setIsMyPageOpen(true))} 
+            onOpenPolicy={() => handleNavClick(() => setIsPolicyModalOpen(true))}
           />
           
           <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 md:py-10">
@@ -270,9 +322,33 @@ function App() {
               <div className="flex flex-col gap-8">
                 <div className="space-y-6">
                   <div ref={mapSectionRef} className={`bg-white rounded-3xl border border-gray-100 shadow-lg overflow-hidden relative z-0 transition-all duration-500 ${isMapExpanded ? 'h-[600px]' : 'h-64 md:h-80'}`}>
-                    <div className="absolute inset-0 z-0"><StationMap stations={filteredStations} onMarkerClick={handleMarkerClick} onMapClick={handleMapClick} isLoading={isStationsLoading} /></div>
-                    {summaryStation && <StationSummaryOverlay station={summaryStation} onClose={() => setSummaryStationId(null)} onViewDetail={() => { setSummaryStationId(null); setSelectedStationId(summaryStation.station_id); }} />}
-                    <div className="absolute top-4 left-4 z-10"><button onClick={() => setIsMapExpanded(!isMapExpanded)} className="bg-white/95 backdrop-blur shadow-2xl border border-gray-200 p-3 rounded-2xl text-gray-700 hover:bg-gray-50 flex items-center gap-2">{isMapExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</button></div>
+                    <div className="absolute inset-0 z-0">
+                      <StationMap 
+                        stations={filteredStations} 
+                        onMarkerClick={handleMarkerClick} 
+                        onMapClick={handleMapClick} 
+                        onViewStationInfo={(id) => setSummaryStationId(id)}
+                        isLoading={isStationsLoading} 
+                      />
+                    </div>
+                    {summaryStation && !routeSummary && (
+                      <StationSummaryOverlay 
+                        station={summaryStation} 
+                        onClose={() => setSummaryStationId(null)} 
+                        onViewDetail={() => { setSummaryStationId(null); setSelectedStationId(summaryStation.station_id); }} 
+                      />
+                    )}
+                    
+                    {/* Map Controls */}
+                    <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
+                      <button onClick={() => setIsMapExpanded(!isMapExpanded)} className="bg-white/95 backdrop-blur shadow-2xl border border-gray-200 p-3 rounded-2xl text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                        {isMapExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                      </button>
+                      <button onClick={() => setIsFilterSheetOpen(true)} className="md:hidden bg-blue-600 text-white shadow-2xl p-3 rounded-2xl flex items-center justify-center animate-pulse">
+                        <Filter size={18} fill="currentColor" />
+                      </button>
+                    </div>
+
                     {!isAuthenticated && (
                       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-sm px-4 z-10">
                         <button onClick={() => setIsAuthModalOpen(true)} className="bg-gray-900/90 backdrop-blur-xl text-white rounded-[32px] p-6 shadow-2xl w-full flex items-center justify-between group hover:bg-black transition-all">
@@ -282,7 +358,7 @@ function App() {
                       </div>
                     )}
                     {isAuthenticated && pendingReviewStation && (
-                      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-sm px-4 z-10">
+                      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-sm px-4 z-10 md:bottom-auto md:top-24 md:right-4 md:left-auto md:translate-x-0">
                         <button onClick={() => setIsReviewModalOpen(true)} className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-[32px] p-6 shadow-2xl w-full flex items-center justify-between group transition-all">
                           <div className="text-left"><p className="font-black text-sm italic">리뷰 퀘스트 진행 중 🎁</p><p className="text-[10px] text-white/70 mt-1 font-bold">{pendingReviewStation.station_name} 리뷰 남기기</p></div>
                           <div className="bg-white/20 p-3 rounded-2xl"><ArrowRight size={20} /></div>
@@ -290,13 +366,21 @@ function App() {
                       </div>
                     )}
                   </div>
+
                   <div className="space-y-6">
-                    <div className="flex flex-col items-start gap-6 px-8 py-8 bg-white rounded-[32px] border border-gray-100 shadow-sm">
+                    <div className="hidden md:flex flex-col items-start gap-6 px-8 py-8 bg-white rounded-[32px] border border-gray-100 shadow-sm">
                       <div><h3 className="text-2xl font-black text-gray-900 tracking-tight">충전소 탐색</h3><p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mt-1">Yangju Network ({filteredStations.length})</p></div>
                       <div className="w-full"><PillFilter /></div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{pagedStations.map((station) => (<StationCard key={station.station_id} station={station} onClick={handleStationCardClick} />))}</div>
-                    {hasMore && (<div className="flex justify-center pt-4"><button onClick={() => setVisibleCount(prev => prev + 12)} className="bg-white border-2 border-gray-100 px-8 py-4 rounded-3xl text-sm font-black text-gray-600 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm">더보기</button></div>)}
+                    
+                    {/* Mobile Header Info */}
+                    <div className="md:hidden flex justify-between items-end px-2">
+                      <div><h3 className="text-xl font-black text-gray-900 tracking-tight">충전소 목록</h3><p className="text-[10px] text-gray-400 font-black uppercase mt-0.5">{filteredStations.length} Stations Found</p></div>
+                      <button onClick={() => setIsFilterSheetOpen(true)} className="flex items-center gap-1.5 text-blue-600 font-black text-xs bg-blue-50 px-3 py-1.5 rounded-full"><SlidersHorizontal size={14} /> 필터</button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-20 md:pb-0">{pagedStations.map((station) => (<StationCard key={station.station_id} station={station} onClick={handleStationCardClick} />))}</div>
+                    {hasMore && (<div className="flex justify-center pt-4 pb-24 md:pb-10"><button onClick={() => setVisibleCount(prev => prev + 12)} className="bg-white border-2 border-gray-100 px-8 py-4 rounded-3xl text-sm font-black text-gray-600 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm">더보기</button></div>)}
                   </div>
                 </div>
               </div>
@@ -304,7 +388,15 @@ function App() {
           </main>
         </>
       )}
-      <MobileNav onOpenMyPage={() => setIsMyPageOpen(true)} />
+      {!guestChargerId && (
+        <MobileNav 
+          onOpenMyPage={() => handleNavClick(() => setIsMyPageOpen(true))} 
+          onOpenPolicy={() => handleNavClick(() => setIsPolicyModalOpen(true))}
+          isAdminMode={isAdminMode}
+          onToggleAdmin={() => handleNavClick(() => setIsAdminMode(!isAdminMode))}
+          onStationClick={() => handleNavClick(() => setIsAdminMode(false))}
+        />
+      )}
     </div>
   );
 }

@@ -30,7 +30,7 @@ export const AdminDashboard: React.FC = () => {
   // 💡 라즈베리파이 CCTV 다중 스트리밍 도메인 (팀원 제공 URL 적용)
   const cameras = [
     { id: 1, label: "CAM-01", station_id: "3682", station_name: "양주시 신도8차 아파트 1호기", url: "https://vium-camera.ngrok.app/video/0" },
-    { id: 2, label: "CAM-02", station_id: "3683", station_name: "양주시 신도8차 아파트 2호기", url: "https://vium-camera.ngrok.app/video/1" }
+    { id: 2, label: "CAM-02", station_id: "3683", station_name: "양주시 신도8차 아파트 2호기", url: "https://vium-camera.ngrok.app/video/2" }
   ];
   
   const [selectedCamId, setSelectedCamId] = useState<number>(1);
@@ -191,18 +191,20 @@ export const AdminDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* 상단 통계 그리드 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 상단 통계 그리드 - 크기 대폭 축소 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 px-4">
         {[
           { label: '전체 충전소', value: stations.length, icon: MapPin, color: 'text-blue-600', bg: 'bg-blue-50' },
           { label: '점검 중 충전기', value: totalFaulty, icon: Clock, color: 'text-red-600', bg: 'bg-red-50' },
           { label: '대기 중 제보', value: pendingReports, icon: Clock, color: 'text-orange-600', bg: 'bg-orange-50' },
           { label: '정상 노출 리뷰', value: visibleReviewsCount, icon: MessageSquare, color: 'text-green-600', bg: 'bg-green-50' },
         ].map((stat, i) => (
-          <div key={i} className="bg-white p-6 rounded-[32px] border border-gray-100 shadow-sm hover:shadow-md transition-all">
-            <div className={`${stat.bg} ${stat.color} w-12 h-12 rounded-2xl flex items-center justify-center mb-4`}><stat.icon size={24} /></div>
-            <p className="text-gray-400 text-[10px] font-black uppercase mb-1">{stat.label}</p>
-            <p className="text-2xl font-black text-gray-900">{stat.value}</p>
+          <div key={i} className="bg-white p-3 md:p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-3">
+            <div className={`${stat.bg} ${stat.color} w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center shrink-0`}><stat.icon size={16} className="md:w-5 md:h-5" /></div>
+            <div className="min-w-0">
+              <p className="text-gray-400 text-[8px] md:text-[10px] font-black uppercase truncate">{stat.label}</p>
+              <p className="text-base md:text-xl font-black text-gray-900">{stat.value}</p>
+            </div>
           </div>
         ))}
       </div>
@@ -291,18 +293,18 @@ export const AdminDashboard: React.FC = () => {
                   )}
 
                   {/* LIVE 뱃지 (Focus Mode 특화 UI) */}
-                  <div className="absolute top-8 left-8 bg-black/50 backdrop-blur-2xl px-5 py-2.5 rounded-full flex items-center gap-3 border border-white/20 shadow-2xl select-none">
-                    <span className={`w-3 h-3 rounded-full ${cameraStatus[selectedCamId] !== false ? 'bg-red-500 animate-pulse shadow-[0_0_15px_rgba(239,68,68,1)]' : 'bg-gray-500'}`}></span>
-                    <span className="text-white text-[11px] font-black tracking-[0.3em] uppercase">LIVE STREAMING</span>
+                  <div className="absolute top-4 left-4 md:top-8 md:left-8 bg-black/50 backdrop-blur-2xl px-3 py-1.5 md:px-5 md:py-2.5 rounded-full flex items-center gap-2 md:gap-3 border border-white/20 shadow-2xl select-none">
+                    <span className={`w-2 h-2 md:w-3 md:h-3 rounded-full ${cameraStatus[selectedCamId] !== false ? 'bg-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,1)] md:shadow-[0_0_15px_rgba(239,68,68,1)]' : 'bg-gray-500'}`}></span>
+                    <span className="text-white text-[8px] md:text-[11px] font-black tracking-[0.1em] md:tracking-[0.3em] uppercase">LIVE STREAMING</span>
                   </div>
 
                   {/* 하단 정보 오버레이 */}
-                  <div className="absolute bottom-8 left-8 right-8 flex justify-between items-end pointer-events-none">
-                    <div className="bg-black/60 backdrop-blur-xl p-4 rounded-2xl border border-white/10 shadow-2xl">
-                      <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Active Channel</p>
-                      <h4 className="text-white text-lg font-black">{selectedCam.label} — {selectedCam.station_id}</h4>
+                  <div className="absolute bottom-4 left-4 right-4 md:bottom-8 md:left-8 md:right-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-3 pointer-events-none">
+                    <div className="bg-black/60 backdrop-blur-xl p-3 md:p-4 rounded-xl md:rounded-2xl border border-white/10 shadow-2xl">
+                      <p className="text-[8px] md:text-[10px] font-black text-blue-400 uppercase tracking-widest mb-0.5 md:mb-1">Active Channel</p>
+                      <h4 className="text-white text-xs md:text-lg font-black">{selectedCam.label} — {selectedCam.station_id}</h4>
                     </div>
-                    <div className="text-white/30 font-mono text-[10px] tracking-tighter text-right">
+                    <div className="hidden xs:block text-white/30 font-mono text-[8px] md:text-[10px] tracking-tighter text-left md:text-right">
                       {new Date().toISOString()}<br/>
                       ENCRYPTION: AES-256 SYNCED
                     </div>
@@ -313,14 +315,13 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              <div className="max-w-5xl mx-auto bg-blue-50 p-6 rounded-3xl border border-blue-100 flex items-start gap-4">
-                <div className="bg-white text-blue-600 p-3 rounded-2xl shrink-0 shadow-sm"><Wrench size={20} /></div>
-                <div className="pt-1">
-                  <p className="text-sm font-black text-blue-900 mb-2">집중 관제 모드 안내</p>
-                  <p className="text-xs text-blue-700/80 leading-relaxed font-medium">
-                    1. 상단의 채널 버튼을 클릭하여 관제 대상을 즉시 변경할 수 있습니다.<br/>
-                    2. 현재 활성화된 채널 외의 스트리밍은 자동으로 차단되어 네트워크 자원을 절약합니다.<br/>
-                    3. 영상이 멈춘 경우 '재연결 시도' 버튼을 눌러 스트림 세션을 갱신하십시오.
+              <div className="max-w-5xl mx-auto bg-blue-50 p-4 md:p-6 rounded-3xl border border-blue-100 flex items-start gap-4">
+                <div className="bg-white text-blue-600 p-2 md:p-3 rounded-xl md:rounded-2xl shrink-0 shadow-sm"><Wrench size={16} className="md:w-5 md:h-5" /></div>
+                <div className="pt-0.5 md:pt-1">
+                  <p className="text-xs md:text-sm font-black text-blue-900 mb-1 md:mb-2">집중 관제 모드 안내</p>
+                  <p className="text-[10px] md:text-xs text-blue-700/80 leading-relaxed font-medium">
+                    1. 상단의 채널 버튼을 클릭하여 관제 대상을 변경하십시오.<br className="hidden md:block"/>
+                    2. 현재 활성화된 채널 외의 스트리밍은 자동으로 차단됩니다.
                   </p>
                 </div>
               </div>

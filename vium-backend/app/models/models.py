@@ -35,7 +35,7 @@ class Station(Base):
     address = Column(String(200))
     latitude = Column(DECIMAL(10, 7))
     longitude = Column(DECIMAL(10, 7))
-    price = Column(Integer, default=300)
+    price = Column(Integer, default=340)
     isTimeSale = Column(Boolean, default=False)
     priceHistory = Column(JSON) 
     lastSuccessTime = Column(String(50), default="방금 전")
