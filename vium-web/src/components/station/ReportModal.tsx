@@ -3,6 +3,7 @@ import { X, Camera, Loader2, Check, CheckCircle2, Zap } from 'lucide-react';
 import type { ChargingStation } from '../../types';
 import { stationService } from '../../services/stationService';
 import { useNotificationStore } from '../../store/notificationStore';
+import { compressImage } from '../../utils/imageUtils';
 
 interface ReportModalProps {
   station: ChargingStation | null;
@@ -20,20 +21,32 @@ export const ReportModal: React.FC<ReportModalProps> = ({ station, onClose }) =>
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
 
   if (!station) return null;
 
   const isValid = selectedChargerId && content.trim().length >= 10;
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
+    if (!file) return;
+
+    try {
+      setIsCompressing(true);
+      // [413 Error 방지] 서버 전송 전 프론트엔드에서 1024px, 0.7 퀄리티로 압축
+      const compressedFile = await compressImage(file);
+      setSelectedFile(compressedFile);
+      
       const reader = new FileReader();
       reader.onloadend = () => {
         setPreviewUrl(reader.result as string);
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(compressedFile);
+    } catch (error) {
+      console.error('이미지 압축 실패:', error);
+      alert('이미지 처리 중 오류가 발생했습니다.');
+    } finally {
+      setIsCompressing(false);
     }
   };
 
@@ -198,11 +211,15 @@ export const ReportModal: React.FC<ReportModalProps> = ({ station, onClose }) =>
                   {selectedFile ? <><Check size={18} /> 완료</> : <><Camera size={18} /> 사진</>}
                 </button>
                 <button 
-                  disabled={!isValid || isSubmitting}
+                  disabled={!isValid || isSubmitting || isCompressing}
                   onClick={handleSubmit}
                   className="flex-[2] bg-red-600 disabled:bg-gray-200 text-white py-4 rounded-3xl text-sm font-black shadow-xl transition-all active:scale-95"
                 >
-                  {isSubmitting ? <><Loader2 size={18} className="animate-spin" /> 전송 중</> : '제보 등록하기'}
+                  {isSubmitting || isCompressing ? (
+                    <><Loader2 size={18} className="animate-spin" /> {isCompressing ? '이미지 처리 중' : '전송 중'}</>
+                  ) : (
+                    '제보 등록하기'
+                  )}
                 </button>
               </div>
             </div>
