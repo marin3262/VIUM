@@ -135,7 +135,7 @@ export const PolicyModal: React.FC<PolicyModalProps> = ({ onClose }) => {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-white p-4 rounded-2xl border border-blue-50">
-                  <p className="text-[11px] font-black text-gray-900 mb-1 flex items-center gap-1.5"><Sun size={14} className="text-orange-400" /> 낮 피크 에코 (11:00 ~ 14:00)</p>
+                  <p className="text-[11px] font-black text-gray-900 mb-1 flex items-center gap-1.5"><Sun size={14} className="text-orange-400" /> 낮 피크 에코 (11:00 ~ 15:00)</p>
                   <p className="text-[10px] text-gray-500 font-medium">해당 시간 내 출차 시 <strong>200P 추가</strong></p>
                 </div>
                 <div className="bg-white p-4 rounded-2xl border border-blue-50">

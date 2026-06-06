@@ -429,66 +429,57 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
         <Compass size={24} />
       </button>
 
-      {/* [UX 개편] 주행 요약 대시보드 (하단 중앙) - 모바일 네비게이션 고려 위치 상향 */}
+      {/* [UX 최적화] 경로 안내 초슬림 바 (하단 중앙) */}
       {routeSummary && (
-        <div className="absolute bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-48px)] max-w-sm bg-white/95 backdrop-blur-md rounded-[32px] shadow-2xl border border-white/20 p-5 animate-in slide-in-from-bottom-10 duration-500">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
-                <Navigation size={18} fill="currentColor" />
-              </div>
-              <h4 className="text-sm font-black text-gray-900">주행 대시보드</h4>
-            </div>
-            <button 
-              onClick={clearRoute}
-              className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 transition-colors"
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-6">
-            <div className="flex-1 flex flex-col gap-1">
-              <div className="flex items-center gap-1.5 text-gray-400">
-                <Clock size={12} />
-                <span className="text-[10px] font-bold uppercase tracking-wider">예상 시간</span>
-              </div>
-              <p className="text-xl font-black text-indigo-600">
-                {Math.round(routeSummary.duration / 60)}<span className="text-sm font-bold ml-0.5">분</span>
-              </p>
+        <div className="absolute bottom-24 md:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-24px)] max-w-sm bg-gray-900/95 backdrop-blur-xl rounded-[24px] shadow-2xl border border-white/10 p-3 md:p-4 animate-in slide-in-from-bottom-5 duration-500 text-white">
+          <div className="flex items-center gap-3 md:gap-4">
+            {/* Left: Icon */}
+            <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20">
+              <Navigation size={20} fill="currentColor" />
             </div>
 
-            <div className="w-px h-8 bg-gray-100" />
-
-            <div className="flex-1 flex flex-col gap-1">
-              <div className="flex items-center gap-1.5 text-gray-400">
-                <Flag size={12} />
-                <span className="text-[10px] font-bold uppercase tracking-wider">남은 거리</span>
+            {/* Center: Info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">경로 안내</span>
+                <span className="truncate text-[10px] font-bold text-gray-400">to {routeSummary.destinationName}</span>
               </div>
-              <p className="text-xl font-black text-gray-900">
-                {(routeSummary.distance / 1000).toFixed(1)}<span className="text-sm font-bold ml-0.5">km</span>
-              </p>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1">
+                  <Clock size={12} className="text-blue-400" />
+                  <span className="text-base font-black tracking-tight">{Math.round(routeSummary.duration / 60)}분</span>
+                </div>
+                <div className="w-1 h-1 bg-gray-700 rounded-full" />
+                <div className="flex items-center gap-1">
+                  <Flag size={12} className="text-emerald-400" />
+                  <span className="text-base font-black tracking-tight">{(routeSummary.distance / 1000).toFixed(1)}km</span>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between gap-3">
-            <p className="text-[10px] font-bold text-gray-400 truncate flex-1">
-              목적지: {routeSummary.destinationName || '선택한 충전소'}
-            </p>
-            
-            {/* [신규] 충전소 정보 확인 버튼 */}
-            <button 
-              onClick={() => {
-                const target = stations.find(s => s.station_name === routeSummary.destinationName);
-                if (target && onViewStationInfo) {
-                  clearRoute();
-                  onViewStationInfo(target.station_id);
-                }
-              }}
-              className="px-3 py-1.5 bg-blue-600 text-white rounded-xl text-[10px] font-black flex items-center gap-1 hover:bg-blue-700 transition-all active:scale-95"
-            >
-              <Info size={12} /> 정보 보기
-            </button>
+            {/* Right: Actions */}
+            <div className="flex items-center gap-1">
+              <button 
+                onClick={() => {
+                  const target = stations.find(s => s.station_name === routeSummary.destinationName);
+                  if (target && onViewStationInfo) {
+                    clearRoute();
+                    onViewStationInfo(target.station_id);
+                  }
+                }}
+                className="w-10 h-10 bg-white/10 hover:bg-white/20 rounded-xl flex items-center justify-center transition-all active:scale-90"
+                title="상세 정보"
+              >
+                <Info size={18} />
+              </button>
+              <button 
+                onClick={clearRoute}
+                className="w-10 h-10 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-xl flex items-center justify-center transition-all active:scale-90"
+                title="안내 종료"
+              >
+                <X size={18} />
+              </button>
+            </div>
           </div>
         </div>
       )}

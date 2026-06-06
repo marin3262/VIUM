@@ -57,7 +57,7 @@ export const MyPage: React.FC<MyPageProps> = ({ onClose }) => {
   if (!user) return null;
 
   return (
-    <div className="fixed inset-0 z-[55] flex items-end md:items-center justify-center p-0 md:p-4 animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-in fade-in duration-300">
       <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" onClick={onClose}></div>
       
       {/* 리뷰 수정 모달 */}

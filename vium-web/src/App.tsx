@@ -349,19 +349,30 @@ function App() {
                       </button>
                     </div>
 
-                    {!isAuthenticated && (
-                      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-sm px-4 z-10">
-                        <button onClick={() => setIsAuthModalOpen(true)} className="bg-gray-900/90 backdrop-blur-xl text-white rounded-[32px] p-6 shadow-2xl w-full flex items-center justify-between group hover:bg-black transition-all">
-                          <div className="text-left"><p className="font-black text-sm">지금 가입하고 마일리지 받기 🎉</p><p className="text-[10px] text-gray-400 mt-1 font-bold">1,000P 지급 및 실시간 충전 연동</p></div>
-                          <div className="bg-blue-600 p-3 rounded-2xl group-hover:scale-110 transition-transform"><ArrowRight size={20} /></div>
+                    {/* [Issue 3, 4, 5 해결] 단일 오버레이 노출 원칙 적용 및 배너 크기 최적화 */}
+                    {!isAuthenticated && !routeSummary && !summaryStation && (
+                      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-[calc(100%-120px)] sm:max-w-xs px-4 z-10">
+                        <button onClick={() => setIsAuthModalOpen(true)} className="bg-gray-900/90 backdrop-blur-xl text-white rounded-[24px] sm:rounded-[32px] p-4 sm:p-6 shadow-2xl w-full flex items-center justify-between group hover:bg-black transition-all">
+                          <div className="text-left">
+                            <p className="font-black text-xs sm:text-sm">지금 가입하고 혜택 받기 🎉</p>
+                            <p className="text-[9px] sm:text-[10px] text-gray-400 mt-0.5 sm:mt-1 font-bold">1,000P 및 실시간 연동</p>
+                          </div>
+                          <div className="bg-blue-600 p-2 sm:p-3 rounded-xl sm:rounded-2xl group-hover:scale-110 transition-transform">
+                            <ArrowRight size={16} className="sm:w-5 sm:h-5" />
+                          </div>
                         </button>
                       </div>
                     )}
-                    {isAuthenticated && pendingReviewStation && (
-                      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-sm px-4 z-10 md:bottom-auto md:top-24 md:right-4 md:left-auto md:translate-x-0">
-                        <button onClick={() => setIsReviewModalOpen(true)} className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-[32px] p-6 shadow-2xl w-full flex items-center justify-between group transition-all">
-                          <div className="text-left"><p className="font-black text-sm italic">리뷰 퀘스트 진행 중 🎁</p><p className="text-[10px] text-white/70 mt-1 font-bold">{pendingReviewStation.station_name} 리뷰 남기기</p></div>
-                          <div className="bg-white/20 p-3 rounded-2xl"><ArrowRight size={20} /></div>
+                    {isAuthenticated && pendingReviewStation && !routeSummary && !summaryStation && (
+                      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-[calc(100%-120px)] sm:max-w-xs px-4 z-10 md:bottom-auto md:top-24 md:right-4 md:left-auto md:translate-x-0">
+                        <button onClick={() => setIsReviewModalOpen(true)} className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-[24px] sm:rounded-[32px] p-4 sm:p-6 shadow-2xl w-full flex items-center justify-between group transition-all">
+                          <div className="text-left">
+                            <p className="font-black text-xs sm:text-sm italic">리뷰 퀘스트 진행 중 🎁</p>
+                            <p className="text-[9px] sm:text-[10px] text-white/70 mt-0.5 sm:mt-1 font-bold">리뷰 남기고 보너스 받기</p>
+                          </div>
+                          <div className="bg-white/20 p-2 sm:p-3 rounded-xl sm:rounded-2xl">
+                            <ArrowRight size={16} className="sm:w-5 sm:h-5" />
+                          </div>
                         </button>
                       </div>
                     )}

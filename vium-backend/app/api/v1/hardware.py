@@ -113,10 +113,38 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
     old_status = charger.status
     new_status = old_status
 
-    if signal.status in ["CONNECTED", "CHARGING"]:
+    if signal.status == "CHARGING":
         new_status = "Charging"
-        if signal.user_id:
+        # [지능형 유저/세션 매핑]: 하드웨어에서 정보가 안 오더라도, 현재 이 충전기를 쓰려는 세션을 찾아 매핑
+        if not signal.user_id:
+            active_session = db.query(models.ChargingSession).filter(
+                models.ChargingSession.charger_id == charger.charger_id,
+                models.ChargingSession.status == "PENDING"
+            ).order_by(models.ChargingSession.created_at.desc()).first()
+            
+            if active_session:
+                charger.active_user_id = active_session.user_id
+                charger.active_session_id = active_session.order_id
+                print(f"🔗 [Auto Mapping] Charger {charger.charger_id} -> User:{active_session.user_id}, Session:{active_session.order_id[:8]}")
+        else:
             charger.active_user_id = signal.user_id
+            # user_id가 있다면 해당 유저의 최신 세션 ID도 찾아 매핑
+            active_session = db.query(models.ChargingSession).filter(
+                models.ChargingSession.user_id == signal.user_id,
+                models.ChargingSession.charger_id == charger.charger_id,
+                models.ChargingSession.status == "PENDING"
+            ).order_by(models.ChargingSession.created_at.desc()).first()
+            if active_session:
+                charger.active_session_id = active_session.order_id
+            
+    elif signal.status == "CONNECTED":
+        # 단순히 켜진 상태(CONNECTED)는 Charging 상태로 만들지 않고, 
+        # 이전 상태가 Charging이었다면(충전기 분리 시) Occupied로 전이
+        if old_status == "Charging":
+            new_status = "Occupied"
+        else:
+            # 점유 중이거나 사용 가능 상태라면 상태 유지 (보통 RPi가 Occupied로 만듦)
+            pass
                 
     elif signal.status == "DISCONNECTED":
         new_status = "Occupied"
