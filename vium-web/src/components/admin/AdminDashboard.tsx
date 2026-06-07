@@ -45,8 +45,21 @@ export const AdminDashboard: React.FC = () => {
 
   // 이미지 로딩 실패 시 처리 로직
   const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-    e.currentTarget.src = 'https://via.placeholder.com/400x400?text=Image+Not+Found';
-    e.currentTarget.className = "w-32 h-32 object-cover rounded-2xl border border-gray-200 opacity-40 grayscale";
+    // 외부 서비스(via.placeholder) 의존성을 제거하고 로컬 Fallback UI로 대체
+    const target = e.currentTarget;
+    target.style.display = 'none'; // 원본 이미지 숨김
+    
+    // 이미 대체 UI가 생성되어 있는지 확인
+    const parent = target.parentElement;
+    if (parent && !parent.querySelector('.image-fallback')) {
+      const fallback = document.createElement('div');
+      fallback.className = "image-fallback w-full h-full flex flex-col items-center justify-center bg-gray-100 rounded-2xl border border-gray-200 text-gray-400 gap-2 animate-in fade-in duration-300";
+      fallback.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/><path d="m11 13 1.586-1.586a2 2 0 0 1 2.828 0L18 14"/></svg>
+        <span class="text-[10px] font-black uppercase tracking-tighter">Image Not Found</span>
+      `;
+      parent.appendChild(fallback);
+    }
   };
 
   const loadAdminData = async () => {
