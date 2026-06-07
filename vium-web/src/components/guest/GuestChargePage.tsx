@@ -24,7 +24,6 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
   const [progress, setProgress] = useState(30);
   const [totalPrice, setTotalPrice] = useState(0);
   
-  // 1. 주문 번호(OrderID) 복구 - URL에서 직접 읽어오는 것이 가장 안전함
   const [activeOrderId, setActiveOrderId] = useState<string | null>(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('orderId') || sessionStorage.getItem('vium_guest_active_order_id');
@@ -33,13 +32,13 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [isConnectorDisconnected, setIsConnectorDisconnected] = useState(false);
   
-  // 2. 알림 동의 상태 복구 - 세션 스토리지 기반
   const [isSubscribed, setIsSubscribed] = useState(() => {
     return sessionStorage.getItem('vium_guest_is_subscribed') === 'true';
   });
   
   const isConfirmingRef = useRef(false);
   const isPushMappingRef = useRef(false);
+  const hasSyncedInitialBattery = useRef(false);
 
   const { subscribe, unsubscribe, isSubscribing } = usePushNotification();
 
@@ -71,7 +70,6 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
           const foundStation = res.data.find(s => s.chargers.some(c => c.charger_id === chargerId));
           if (foundStation) {
             setStation(foundStation);
-            // [추가]: 비회원 QR 접속 즉시 해당 호기를 서버에 자동 선점 보고 (매핑 무결성 확보)
             apiClient.post(`/hardware/claim?charger_id=${chargerId}`, {}).catch(() => {});
             console.log("🤫 [Guest Auto-Claim] Charger ID:", chargerId);
           }
@@ -83,7 +81,6 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
     loadStation();
   }, [chargerId]);
 
-  // 하드웨어 모니터링
   useEffect(() => {
     if (!station) return;
     const interval = setInterval(async () => {
@@ -93,16 +90,17 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
         if (currentStation) {
           const charger = currentStation.chargers.find(c => c.charger_id === chargerId);
           if (charger) {
-             if (step === 'CONNECTION_PROMPT' && charger.status === 'Charging') {
+             if (step === 'CONNECTION_PROMPT' && charger.status === 'Charging' && !hasSyncedInitialBattery.current) {
                 if (currentStation.current_battery !== undefined) {
-                    setCurrentSoc(currentStation.current_battery);
-                    setProgress(currentStation.current_battery);
+                    const initialSoc = Math.round(currentStation.current_battery);
+                    setCurrentSoc(initialSoc);
+                    setProgress(initialSoc);
+                    hasSyncedInitialBattery.current = true;
                 }
                 setStep('CONFIRM_CHARGE');
              }
              if ((step === 'WAITING_EXIT' || step === 'SUCCESS') && charger.status === 'Occupied' && !isConnectorDisconnected) {
                  setIsConnectorDisconnected(true);
-                 // [가드]: 알림 동의 시에만 로컬 알림 발생
                  if (isSubscribed) {
                    addNotification({
                      id: activeOrderId ? `disconnect-${activeOrderId}` : `disconnect-guest-${Date.now()}`,
@@ -115,11 +113,9 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
              }
              if ((step === 'WAITING_EXIT' || step === 'SUCCESS') && charger.status === 'Available' && step !== 'SUCCESS') {
                  setStep('SUCCESS');
-                 // 종료 시 세션 스토리지 클린업
                  sessionStorage.removeItem('vium_guest_active_order_id');
                  sessionStorage.removeItem('vium_guest_is_subscribed');
                  
-                 // [가드]: 알림 동의 시에만 로컬 알림 발생
                  if (isSubscribed) {
                    addNotification({
                      id: activeOrderId ? `exit-${activeOrderId}` : `exit-guest-${Date.now()}`,
@@ -137,7 +133,6 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
     return () => clearInterval(interval);
   }, [station, step, chargerId, addNotification, activeOrderId, isConnectorDisconnected, isSubscribed]);
 
-  // 충전 시뮬레이션
   useEffect(() => {
     if (step === 'CHARGING') {
       const interval = setInterval(() => {
@@ -145,7 +140,6 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
           if (p >= targetSoc) {
             clearInterval(interval);
             
-            // [가드]: 알림 동의 시에만 로컬 알림 발생 (alert()는 사용자 요청으로 제거됨)
             if (isSubscribed) {
               addNotification({
                 id: activeOrderId ? `done-${activeOrderId}` : `done-guest-${Date.now()}`,
@@ -157,7 +151,6 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
             }
 
             const chargedPercent = targetSoc - Math.round(currentSoc);
-            // 실제 요금표 반영 (2026 급속 평균가 340원 단가 적용)
             const calculatedPrice = Math.max(0, chargedPercent * 340);
             setTotalPrice(calculatedPrice);
             setStep('BILLING');
@@ -170,7 +163,6 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
     }
   }, [step, targetSoc, currentSoc, activeOrderId, addNotification, isSubscribed]);
 
-  // 결제 복구 및 알림 매핑
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const orderIdFromUrl = params.get('orderId');
@@ -195,7 +187,6 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
            }
        }
 
-       // 1. 알림 구독 매핑
        if (!isPushMappingRef.current && isSubscribed && finalOrderId) {
            isPushMappingRef.current = true;
            subscribe(finalOrderId, true).then(success => {
@@ -203,7 +194,6 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
            });
        }
 
-       // 2. 결제 승인 처리
        if (isConfirmingRef.current) return;
        isConfirmingRef.current = true;
 
@@ -223,7 +213,6 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
            });
            
            if (response.success) {
-             // [가드]: 알림 동의 시에만 로컬 알림 발생
              if (isSubscribed) {
                addNotification({
                  id: `paid-${finalOrderId}`,
@@ -248,7 +237,6 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
     }
   }, [chargerId, isSubscribed, subscribe, addNotification, activeOrderId]);
 
-  // 충전 시작 및 세션 선행 생성
   const handleStartCharging = async () => {
     if (!station) return;
 
@@ -267,7 +255,6 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
         setActiveOrderId(orderId);
         sessionStorage.setItem('vium_guest_active_order_id', orderId);
         
-        // [가드]: 알림 동의 시에만 로컬 알림 발생
         if (isSubscribed) {
           addNotification({
             id: `start-${orderId}`,
@@ -277,7 +264,6 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
             message: `비회원 고객님, ${station.station_name}에서 충전이 시작되었습니다. 안전하게 충전해 드릴게요!`
           });
 
-          // 알림 구독이 활성화되어 있다면 즉시 orderId와 매핑 (충전 중 알림 보장)
           await subscribe(orderId, true);
           console.log("🔗 비회원 알림 매핑 완료 (충전 시작 즉시, Silent)");
         }
@@ -290,7 +276,6 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
     }
   };
 
-  // 결제 요청
   const handlePayment = async () => {
     if (!station || !activeOrderId) return;
     setIsProcessingPayment(true);
@@ -326,7 +311,6 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
     <div className="min-h-[100dvh] bg-gray-50 flex flex-col font-sans text-gray-900 overflow-hidden">
       <div className={`flex-1 w-full max-w-md mx-auto bg-white shadow-xl flex flex-col relative`}>
         
-        {/* Header with Exit Button */}
         <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-8 text-center shrink-0 relative">
             <button 
               onClick={handleExit}

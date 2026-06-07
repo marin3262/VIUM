@@ -61,7 +61,6 @@ function App() {
         if (event.data?.type === 'PUSH_RECEIVED') {
           const { title, body, type, role, tag, session_id, user_id } = event.data.payload;
           
-          // [격리 로직 강화]: 본인의 알림인지 엄격하게 확인
           const currentGuestOrderId = sessionStorage.getItem('vium_guest_active_order_id');
           
           const isMyUserNoti = user_id && user && Number(user_id) === Number(user.user_id);
@@ -108,12 +107,13 @@ function App() {
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
-  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false); // 신규: 필터 시트 상태
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [chargingTargetId, setChargingTargetId] = useState<string | null>(null);
   const [chargingInitialStep, setChargingInitialStep] = useState<'CONNECTION_PROMPT' | 'BILLING'>('CONNECTION_PROMPT');
   const [guestChargerId, setGuestChargerId] = useState<string | null>(null);
 
   const mapSectionRef = useRef<HTMLDivElement>(null);
+  const processedOrderIds = useRef<Set<string>>(new Set());
 
   const selectedStation = useMemo(() => 
     selectedStationId ? stations.find(s => s.station_id === selectedStationId) : null
@@ -171,7 +171,8 @@ function App() {
             const isMyUserCharge = isAuthenticated && user && charger.active_user_id === user.user_id;
             const isMyGuestCharge = !isAuthenticated && currentGuestOrderId && charger.active_session_id === currentGuestOrderId;
 
-            if (isMyUserCharge || isMyGuestCharge) {
+            if ((isMyUserCharge || isMyGuestCharge) && charger.active_session_id && !processedOrderIds.current.has(charger.active_session_id)) {
+              processedOrderIds.current.add(charger.active_session_id);
               setChargingTargetId(station.station_id);
               setChargingInitialStep('CONNECTION_PROMPT');
             }
@@ -243,7 +244,6 @@ function App() {
   }, [isAdminMode, user]);
 
   const handleNavClick = useCallback((action: () => void) => {
-    // [Issue 2 해결] 모든 오버레이/모달 닫기
     setSelectedStationId(null);
     setSummaryStationId(null);
     setReportTargetId(null);
@@ -261,7 +261,6 @@ function App() {
       {isMyPageOpen && <MyPage onClose={() => setIsMyPageOpen(false)} />}
       {isPolicyModalOpen && <PolicyModal onClose={() => setIsPolicyModalOpen(false)} />}
       
-      {/* Mobile Filter Bottom Sheet */}
       {isFilterSheetOpen && (
         <div className="fixed inset-0 z-[70] flex items-end justify-center p-0 animate-in fade-in duration-300 md:hidden">
           <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setIsFilterSheetOpen(false)}></div>
@@ -339,7 +338,6 @@ function App() {
                       />
                     )}
                     
-                    {/* Map Controls */}
                     <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
                       <button onClick={() => setIsMapExpanded(!isMapExpanded)} className="bg-white/95 backdrop-blur shadow-2xl border border-gray-200 p-3 rounded-2xl text-gray-700 hover:bg-gray-50 flex items-center gap-2">
                         {isMapExpanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
@@ -349,7 +347,6 @@ function App() {
                       </button>
                     </div>
 
-                    {/* [Issue 3, 4, 5 해결] 단일 오버레이 노출 원칙 적용 및 배너 크기 최적화 */}
                     {!isAuthenticated && !routeSummary && !summaryStation && (
                       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-[calc(100%-120px)] sm:max-w-xs px-4 z-10">
                         <button onClick={() => setIsAuthModalOpen(true)} className="bg-gray-900/90 backdrop-blur-xl text-white rounded-[24px] sm:rounded-[32px] p-4 sm:p-6 shadow-2xl w-full flex items-center justify-between group hover:bg-black transition-all">
@@ -384,7 +381,6 @@ function App() {
                       <div className="w-full"><PillFilter /></div>
                     </div>
                     
-                    {/* Mobile Header Info */}
                     <div className="md:hidden flex justify-between items-end px-2">
                       <div><h3 className="text-xl font-black text-gray-900 tracking-tight">충전소 목록</h3><p className="text-[10px] text-gray-400 font-black uppercase mt-0.5">{filteredStations.length} Stations Found</p></div>
                       <button onClick={() => setIsFilterSheetOpen(true)} className="flex items-center gap-1.5 text-blue-600 font-black text-xs bg-blue-50 px-3 py-1.5 rounded-full"><SlidersHorizontal size={14} /> 필터</button>
