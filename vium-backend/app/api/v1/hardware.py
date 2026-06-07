@@ -11,9 +11,29 @@ from ...schemas import schemas
 from ...utils.redis_sync import update_redis_slots
 from ...db.redis_client import update_station_battery
 from ...utils.push_handler import trigger_push_notification
+from .. import deps
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+@router.post("/claim", response_model=schemas.ActionResponse)
+def claim_charger(
+    charger_id: str, 
+    db: Session = Depends(get_db), 
+    current_user: Optional[models.User] = Depends(deps.get_current_user_optional)
+):
+    """[은밀한 트리거] 사용자가 UI에서 호기를 클릭하면 해당 충전기를 미리 점유합니다."""
+    charger = db.query(models.Charger).filter(models.Charger.charger_id == charger_id).first()
+    if not charger:
+        raise HTTPException(status_code=404, detail="Charger not found")
+    
+    # 해당 충전기에 유저 ID 선점 기록 (비회원은 9999로 기록)
+    charger.active_user_id = current_user.user_id if current_user else 9999
+    charger.active_session_id = None 
+    
+    db.commit()
+    print(f"🤫 [Secret Claim] Charger {charger_id} is now locked for User {charger.active_user_id}")
+    return {"success": True, "message": "Charger claimed successfully."}
 
 @router.post("/connectors", response_model=schemas.ActionResponse)
 def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depends(get_db)):
@@ -25,32 +45,42 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
 
     station = charger.station
     
+    # [핵심 보강] 하드웨어가 유저 정보를 안 보냈을 때, 클릭 정보를 주인으로 인정
+    effective_user_id = signal.user_id or charger.active_user_id
+    effective_is_guest = False
+    if effective_user_id == 9999: # 비회원 클릭 마킹
+        effective_is_guest = True
+        effective_user_id = None
+
     # [100% 복구] 고정밀 로그 출력 - 시연 가시성 확보
     print("\n" + "🔌" * 25)
-    print(f"📡 [IoT] CONNECTOR SIGNAL: {signal.status} | 🔋 {signal.battery}% | ⚡ {signal.voltage}V")
+    print(f"📡 [IoT] CONNECTOR SIGNAL: {signal.status} | 🔋 {signal.battery}% | ⚡ {signal.voltage:.2f}V")
     print(f"📍 STATION : {station.station_name if station else 'N/A'}")
-    if signal.user_id:
-        print(f"👤 USER ID : {signal.user_id}")
+    if effective_user_id:
+        print(f"👤 MAPPED USER : {effective_user_id}")
+    elif effective_is_guest:
+        print(f"👤 MAPPED USER : GUEST")
     print("🔌" * 25 + "\n")
 
     # [중요: 점검 중 상태 보호 로직]
     if charger.status == "Faulty":
         print(f"🛡️ [Status Lock] {charger.charger_id} is in 'Faulty' state. Skipping IoT status update.")
         if signal.status in ["CONNECTED", "CHARGING"] and signal.battery is not None:
-             update_station_battery(charger.station_id, signal.battery, signal.user_id)
+             update_station_battery(charger.station_id, signal.battery, effective_user_id)
         return {"success": True, "message": "Charger is under maintenance. Status update ignored."}
 
     # 1. Redis 동기화 및 지능형 알림 트리거
     if signal.status in ["CONNECTED", "CHARGING"] and signal.battery is not None:
-        update_station_battery(charger.station_id, signal.battery, signal.user_id)
+        update_station_battery(charger.station_id, signal.battery, effective_user_id)
 
+        # 알림을 보낼 대상 세션 식별 (최신 순)
         query = db.query(models.ChargingSession).filter(
             models.ChargingSession.charger_id == charger.charger_id,
             models.ChargingSession.status == "PENDING"
         )
-        if signal.user_id:
-            query = query.filter(models.ChargingSession.user_id == signal.user_id)
-        else:
+        if effective_user_id:
+            query = query.filter(models.ChargingSession.user_id == effective_user_id)
+        elif effective_is_guest:
             query = query.filter(models.ChargingSession.is_guest == True)
 
         active_session = query.order_by(models.ChargingSession.created_at.desc()).first()
@@ -86,39 +116,48 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
                 active_session.is_completed_notified = True
                 db.commit()
 
-    # 2. 상태 전이 로직
+    # 2. 상태 전이 및 사용자 매핑 로직 (2중 방어선)
     old_status = charger.status
     new_status = old_status
 
     if signal.status == "CHARGING":
         new_status = "Charging"
-        # [정밀 수정] DB와 시각 동기화를 위해 get_kst_now() 사용
-        ten_minutes_ago = get_kst_now() - timedelta(minutes=10)
         
-        if not signal.user_id:
-            # 매핑 시도 디버깅 로그 추가
-            print(f"🔍 [Auto Mapping Attempt] Searching sessions created after {ten_minutes_ago}")
+        # [🛡️ 1단계 방어선: 은밀한 클릭 선점 또는 신호 내 ID 확인]
+        target_user_id = signal.user_id or charger.active_user_id
+        
+        if target_user_id:
+            ten_minutes_ago = get_kst_now() - timedelta(minutes=10)
+            # 선점된 유저의 최근 세션을 찾아 연결
             active_session = db.query(models.ChargingSession).filter(
+                models.ChargingSession.user_id == (target_user_id if target_user_id != 9999 else None),
+                models.ChargingSession.is_guest == (True if target_user_id == 9999 else False),
                 models.ChargingSession.charger_id == charger.charger_id,
                 models.ChargingSession.status == "PENDING",
                 models.ChargingSession.created_at >= ten_minutes_ago
             ).order_by(models.ChargingSession.created_at.desc()).first()
+            
             if active_session:
-                charger.active_user_id = active_session.user_id
+                charger.active_user_id = target_user_id
                 charger.active_session_id = active_session.order_id
-                print(f"🔗 [Auto Mapping Success] Charger {charger.charger_id} -> User:{active_session.user_id}")
+                print(f"🎯 [Direct Mapping Success] Locked for User {target_user_id}")
             else:
-                print(f"⚠️ [Auto Mapping Fail] No active session found in the last 10 mins.")
-        else:
-            charger.active_user_id = signal.user_id
+                print(f"⚠️ [Claim Mismatch] Claimed user {target_user_id} has no active session. Trying Fallback...")
+                target_user_id = None
+
+        # [🛡️ 2단계 방어선: 기존 지능형 추리 (Fallback)]
+        if not target_user_id:
+            ten_minutes_ago = get_kst_now() - timedelta(minutes=10)
             active_session = db.query(models.ChargingSession).filter(
-                models.ChargingSession.user_id == signal.user_id,
                 models.ChargingSession.charger_id == charger.charger_id,
                 models.ChargingSession.status == "PENDING",
                 models.ChargingSession.created_at >= ten_minutes_ago
             ).order_by(models.ChargingSession.created_at.desc()).first()
+            
             if active_session:
+                charger.active_user_id = active_session.user_id or 9999
                 charger.active_session_id = active_session.order_id
+                print(f"🔗 [Auto Mapping Fallback] Charger {charger.charger_id} -> User:{charger.active_user_id}")
             
     elif signal.status == "CONNECTED":
         if old_status == "Charging":
@@ -127,19 +166,21 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
     elif signal.status == "DISCONNECTED":
         new_status = "Occupied"
         if old_status == "Charging":
-            # [단계 5: 커넥터 해제 알림] - 결제 전/후 상관없이 알림 발송
             query = db.query(models.ChargingSession).filter(
                 models.ChargingSession.charger_id == charger.charger_id,
                 models.ChargingSession.status.in_(["PENDING", "PAID"])
             )
-            if signal.user_id: query = query.filter(models.ChargingSession.user_id == signal.user_id)
+            # 알림 대상도 동일한 effective_user_id 기반으로 필터링
+            if effective_user_id: query = query.filter(models.ChargingSession.user_id == effective_user_id)
+            elif effective_is_guest: query = query.filter(models.ChargingSession.is_guest == True)
+            
             active_session = query.order_by(models.ChargingSession.created_at.desc()).first()
             if active_session:
                 user_nickname = active_session.user.nickname if active_session.user else "고객"
                 title = "🔌 커넥터 분리 확인"
                 body = f"{user_nickname}님, 커넥터가 안전하게 분리되었습니다. 이제 출차해 주세요."
                 trigger_push_notification(db, title, body, user_id=active_session.user_id, session_id=active_session.order_id if active_session.is_guest else None, tag=f"disconnect-{active_session.order_id}", n_type="INFO")
-
+    
     if old_status != new_status:
         charger.status = new_status
         db.commit()

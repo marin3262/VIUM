@@ -6,6 +6,7 @@ import {
 import type { ChargingStation, StationStatus } from '../../types';
 import { useStationStore } from '../../store/stationStore';
 import { useUserStore } from '../../store/userStore';
+import { apiClient } from '../../services/apiClient';
 import { getConnectorName } from '../../types/constants';
 
 interface StationModalProps {
@@ -47,6 +48,17 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
     setUserLocation, 
     isLoading: isRouteLoading 
   } = useStationStore();
+
+  // [은밀한 트리거] 시연을 위한 호기 선점 로직
+  const handleHiddenClaim = async (chargerId: string) => {
+    try {
+      await apiClient.post(`/hardware/claim?charger_id=${chargerId}`, {});
+      console.log("🤫 [Secret Claim Initiated]", chargerId);
+    } catch (e) {
+      // 시연용이므로 조용히 처리
+    }
+  };
+
   const availableSlots = getAvailableSlots(station);
   const totalSlots = station.chargers.length;
 
@@ -198,7 +210,11 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
                 const StatusIcon = config.icon;
                 
                 return (
-                  <div key={c.charger_id} className={`p-4 rounded-[24px] border transition-all ${config.bg} ${c.status === 'Available' ? 'border-green-100 shadow-sm' : 'border-transparent opacity-80'}`}>
+                  <div 
+                    key={c.charger_id} 
+                    onClick={() => handleHiddenClaim(c.charger_id)}
+                    className={`p-4 rounded-[24px] border transition-all ${config.bg} ${c.status === 'Available' ? 'border-green-100 shadow-sm' : 'border-transparent opacity-80'}`}
+                  >
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex flex-col">
                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter mb-0.5">CHARGER ID</span>

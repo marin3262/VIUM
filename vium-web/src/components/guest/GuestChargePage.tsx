@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Zap, CheckCircle2, Loader2, Car, Plug2, BatteryFull, Bell, BellRing, X } from 'lucide-react';
 import { stationService } from '../../services/stationService';
+import { apiClient } from '../../services/apiClient';
 import { usePushNotification } from '../../hooks/usePushNotification';
 import { useNotificationStore } from '../../store/notificationStore';
 import { loadTossPayments } from "@tosspayments/tosspayments-sdk";
@@ -70,6 +71,9 @@ export const GuestChargePage: React.FC<GuestChargePageProps> = ({ chargerId }) =
           const foundStation = res.data.find(s => s.chargers.some(c => c.charger_id === chargerId));
           if (foundStation) {
             setStation(foundStation);
+            // [추가]: 비회원 QR 접속 즉시 해당 호기를 서버에 자동 선점 보고 (매핑 무결성 확보)
+            apiClient.post(`/hardware/claim?charger_id=${chargerId}`, {}).catch(() => {});
+            console.log("🤫 [Guest Auto-Claim] Charger ID:", chargerId);
           }
         }
       } catch (e) {
