@@ -49,7 +49,12 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
         if (response.success && response.data) {
           const currentStation = response.data.find(s => s.station_id === station.station_id);
           if (currentStation) {
-            const charger = currentStation.chargers.find(c => c.active_user_id === user?.user_id);
+            // [정밀 수술]: Number()를 사용하여 회원 ID 매핑 무결성 확보
+            const charger = currentStation.chargers.find(c => 
+              c.active_user_id && user?.user_id && 
+              Number(c.active_user_id) === Number(user.user_id)
+            );
+            
             if (charger?.status === 'Charging' && !hasSyncedInitialBattery.current) {
               if (currentStation.current_battery !== undefined) {
                 const initialSoc = Math.round(currentStation.current_battery);
@@ -59,6 +64,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
                 hasSyncedInitialBattery.current = true;
               }
               setStep('CONFIRM_CHARGE');
+              console.log("🔋 [Modal] Connection detected. Syncing Battery:", currentStation.current_battery);
             }
           }
         }
@@ -70,7 +76,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
     return () => clearInterval(interval);
   }, [station, user, step]);
 
-  // 2. 실시간 배터리 동기화
+  // 2. 실시간 배터리 동기화 (CHARGING 중 서버 데이터 덮어쓰기 방지)
   useEffect(() => {
     if (step === 'CHARGING' || step === 'BILLING' || step === 'WAITING_EXIT' || step === 'SUCCESS') return;
     if (station.current_battery !== undefined && !hasSyncedInitialBattery.current) {
@@ -178,7 +184,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
     try {
       const response = await stationService.createPaymentSession({
         station_id: station.station_id,
-        charger_id: station.chargers.find(c => c.active_user_id === user?.user_id)?.charger_id || '',
+        charger_id: station.chargers.find(c => c.active_user_id && user?.user_id && Number(c.active_user_id) === Number(user.user_id))?.charger_id || '',
         total_price: 0,
         used_mileage: 0,
         final_amount: 0,
@@ -208,7 +214,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
 
       await stationService.updatePaymentSession(activeOrderId, {
         station_id: station.station_id,
-        charger_id: station.chargers.find(c => c.active_user_id === user?.user_id)?.charger_id || '',
+        charger_id: station.chargers.find(c => c.active_user_id && user?.user_id && Number(c.active_user_id) === Number(user.user_id))?.charger_id || '',
         total_price: calculatedPrice,
         used_mileage: usedMileage,
         final_amount: finalAmount,

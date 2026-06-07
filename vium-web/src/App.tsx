@@ -162,19 +162,17 @@ function App() {
 
     if (!chargingTargetId) {
       stations.forEach(station => {
-        const prevStation = prevStationsRef.current.find(ps => ps.station_id === station.station_id);
-        if (!prevStation) return;
         station.chargers.forEach(charger => {
-          const prevCharger = prevStation.chargers.find(pc => pc.charger_id === charger.charger_id);
-          
-          if (prevCharger && prevCharger.status !== 'Charging' && charger.status === 'Charging') {
-            const isMyUserCharge = isAuthenticated && user && charger.active_user_id === user.user_id;
+          if (charger.status === 'Charging') {
+            // [정밀 수술]: 유저 ID 비교 시 Number()를 사용하여 타입 불일치 완전 해결
+            const isMyUserCharge = isAuthenticated && user && charger.active_user_id && Number(charger.active_user_id) === Number(user.user_id);
             const isMyGuestCharge = !isAuthenticated && currentGuestOrderId && charger.active_session_id === currentGuestOrderId;
 
             if ((isMyUserCharge || isMyGuestCharge) && charger.active_session_id && !processedOrderIds.current.has(charger.active_session_id)) {
               processedOrderIds.current.add(charger.active_session_id);
               setChargingTargetId(station.station_id);
               setChargingInitialStep('CONNECTION_PROMPT');
+              console.log("⚡ [App] Matching Charging detected. Triggering Modal.");
             }
           }
         });
