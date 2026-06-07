@@ -31,27 +31,8 @@ def claim_charger(
     # 1. 유저 ID 선점 기록 (비회원은 9999로 기록)
     charger.active_user_id = current_user.user_id if current_user else 9999
     
-    # 2. 기존 매핑된 세션 정보가 있다면 유효성 확인 및 갱신
-    ten_minutes_ago = get_kst_now() - timedelta(minutes=10)
-    
-    query = db.query(models.ChargingSession).filter(
-        models.ChargingSession.charger_id == charger_id,
-        models.ChargingSession.status == "PENDING",
-        models.ChargingSession.created_at >= ten_minutes_ago
-    )
-    
-    if current_user:
-        query = query.filter(models.ChargingSession.user_id == current_user.user_id)
-    else:
-        query = query.filter(models.ChargingSession.is_guest == True)
-        
-    active_session = query.order_by(models.ChargingSession.created_at.desc()).first()
-    
-    if active_session:
-        charger.active_session_id = active_session.order_id
-    else:
-        # 아직 세션이 생성되지 않았다면(꽂기 전 클릭) session_id는 비워둡니다.
-        charger.active_session_id = None
+    # 2. 기존 매핑된 세션 정보 초기화 (새로운 충전 준비를 위해)
+    charger.active_session_id = None
 
     db.commit()
     print(f"🤫 [Secret Claim] Charger {charger_id} locked for User {charger.active_user_id}")
@@ -146,6 +127,10 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
         target_user_id = effective_user_id or (9999 if effective_is_guest else None)
         
         if target_user_id:
+            charger.active_user_id = target_user_id
+            print(f"🎯 [Direct Mapping Success] Locked for User {target_user_id}")
+            
+            # 세션은 나중에 생성되더라도, 팝업 트리거를 위해 ID 비교 권한을 부여함
             ten_minutes_ago = get_kst_now() - timedelta(minutes=10)
             active_session = db.query(models.ChargingSession).filter(
                 models.ChargingSession.user_id == (target_user_id if target_user_id != 9999 else None),
@@ -156,14 +141,12 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
             ).order_by(models.ChargingSession.created_at.desc()).first()
             
             if active_session:
-                charger.active_user_id = target_user_id
                 charger.active_session_id = active_session.order_id
-                print(f"🎯 [Direct Mapping Success] Locked for User {target_user_id}")
             else:
-                print(f"🔍 [Mapping Fallback] Claimed user {target_user_id} has no active session. Trying intelligent search...")
-                target_user_id = None
+                # [중요 수술]: 아직 세션이 없어도 클릭한 주인임을 명시하여 팝업 허용
+                print(f"🔍 [Mapping Notice] User {target_user_id} is claiming this charger. Popup will trigger.")
 
-        # [🛡️ 2단계 방어선: 지능형 추리 (Fallback)]
+        # [🛡️ 2단계 방어선: 기존 지능형 추리 (Fallback)]
         if not target_user_id:
             ten_minutes_ago = get_kst_now() - timedelta(minutes=10)
             active_session = db.query(models.ChargingSession).filter(

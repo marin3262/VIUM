@@ -164,15 +164,20 @@ function App() {
       stations.forEach(station => {
         station.chargers.forEach(charger => {
           if (charger.status === 'Charging') {
-            // [정밀 수술]: 유저 ID 비교 시 Number()를 사용하여 타입 불일치 완전 해결
+            // [정밀 수술]: 회원 시연 시 세션 ID 유무와 관계없이 유저 매핑만 되면 즉시 팝업 트리거
             const isMyUserCharge = isAuthenticated && user && charger.active_user_id && Number(charger.active_user_id) === Number(user.user_id);
             const isMyGuestCharge = !isAuthenticated && currentGuestOrderId && charger.active_session_id === currentGuestOrderId;
 
-            if ((isMyUserCharge || isMyGuestCharge) && charger.active_session_id && !processedOrderIds.current.has(charger.active_session_id)) {
-              processedOrderIds.current.add(charger.active_session_id);
-              setChargingTargetId(station.station_id);
-              setChargingInitialStep('CONNECTION_PROMPT');
-              console.log("⚡ [App] Matching Charging detected. Triggering Modal.");
+            if (isMyUserCharge || isMyGuestCharge) {
+              // 중복 팝업 방지 가드: 회원일 경우 세션 ID가 없을 수 있으므로 호기 ID와 상태 조합으로 판단
+              const guardKey = charger.active_session_id || `pending-${charger.charger_id}`;
+              
+              if (!processedOrderIds.current.has(guardKey)) {
+                processedOrderIds.current.add(guardKey);
+                setChargingTargetId(station.station_id);
+                setChargingInitialStep('CONNECTION_PROMPT');
+                console.log("⚡ [App] Mapping Detected. Triggering Modal (Fast-Track).");
+              }
             }
           }
         });
