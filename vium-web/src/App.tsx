@@ -109,7 +109,7 @@ function App() {
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [chargingTargetId, setChargingTargetId] = useState<string | null>(null);
-  const [chargingInitialStep, setChargingInitialStep] = useState<'CONNECTION_PROMPT' | 'BILLING'>('CONNECTION_PROMPT');
+  const [chargingInitialStep, setChargingInitialStep] = useState<'CONNECTION_PROMPT' | 'CONFIRM_CHARGE' | 'BILLING'>('CONNECTION_PROMPT');
   const [guestChargerId, setGuestChargerId] = useState<string | null>(null);
 
   const mapSectionRef = useRef<HTMLDivElement>(null);
@@ -175,7 +175,8 @@ function App() {
               if (!processedOrderIds.current.has(guardKey)) {
                 processedOrderIds.current.add(guardKey);
                 setChargingTargetId(station.station_id);
-                setChargingInitialStep('CONNECTION_PROMPT');
+                // [UX 개선]: 이미 연결된 경우 바로 배터리 설정 단계로 진입
+                setChargingInitialStep(charger.status === 'Charging' ? 'CONFIRM_CHARGE' : 'CONNECTION_PROMPT');
                 console.log("⚡ [App] Mapping Detected. Triggering Modal (Fast-Track).");
               }
             }

@@ -13,7 +13,7 @@ interface ChargingFlowModalProps {
   station: ChargingStation;
   onClose: () => void;
   onComplete: (amount: number) => void;
-  initialStep?: 'CONNECTION_PROMPT' | 'BILLING';
+  initialStep?: 'CONNECTION_PROMPT' | 'CONFIRM_CHARGE' | 'BILLING';
 }
 
 export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({ 
@@ -38,6 +38,18 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
   
   const isConfirmingRef = useRef(false);
   const hasSyncedInitialBattery = useRef(false);
+  const chargerIdRef = useRef<string | null>(null);
+
+  // 0. 초기 충전기 ID 식별 (매핑 추적용)
+  useEffect(() => {
+    const myCharger = station.chargers.find(c => 
+      (c.active_user_id && user?.user_id && Number(c.active_user_id) === Number(user.user_id)) ||
+      (c.active_session_id && c.active_session_id === activeOrderId)
+    );
+    if (myCharger) {
+      chargerIdRef.current = myCharger.charger_id;
+    }
+  }, [station, user, activeOrderId]);
 
   // 1. 하드웨어 연결 감시
   useEffect(() => {
@@ -114,16 +126,17 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
     }
   }, [step, targetSoc, currentSoc, user]);
 
-  // 4. 결제 완료 후 대기 상태 모니터링
+  // 4. 결제 완료 후 대기 상태 모니터링 (출차 감지)
   useEffect(() => {
-    if (step !== 'WAITING_EXIT' && step !== 'SUCCESS') return;
+    if (step !== 'WAITING_EXIT') return;
 
     const interval = setInterval(async () => {
       const response = await stationService.getStations();
       if (response.success && response.data) {
         const currentStation = response.data.find(s => s.station_id === station.station_id);
         if (currentStation) {
-          const charger = currentStation.chargers.find(c => c.active_session_id === activeOrderId);
+          // [중요 수술]: 세션 ID가 삭제될 수 있으므로 호기 ID로 직접 추적
+          const charger = currentStation.chargers.find(c => c.charger_id === chargerIdRef.current);
           if (charger) {
             if (charger.status === 'Occupied' && !isConnectorDisconnected) {
               setIsConnectorDisconnected(true);
@@ -131,13 +144,20 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
             if (charger.status === 'Available') {
               setStep('SUCCESS');
               clearInterval(interval);
+              
+              // [UX 개선]: 출차가 확인되면 3초 후 자동으로 모달을 닫고 정산 완료
+              setTimeout(() => {
+                const finalReward = (targetSoc - Math.round(currentSoc)) * 10 + (targetSoc <= 80 ? 200 : 0) + 1000;
+                onComplete(finalReward);
+                onClose();
+              }, 4000);
             }
           }
         }
       }
     }, 3000);
     return () => clearInterval(interval);
-  }, [step, station.station_id, activeOrderId, isConnectorDisconnected]);
+  }, [step, station.station_id, targetSoc, currentSoc, onComplete, onClose, isConnectorDisconnected]);
 
   // 5. 결제 리다이렉트 복구 및 최종 승인
   useEffect(() => {
@@ -182,9 +202,10 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
 
   const handleStartChargingFlow = async () => {
     try {
+      const myCharger = station.chargers.find(c => c.active_user_id && user?.user_id && Number(c.active_user_id) === Number(user.user_id));
       const response = await stationService.createPaymentSession({
         station_id: station.station_id,
-        charger_id: station.chargers.find(c => c.active_user_id && user?.user_id && Number(c.active_user_id) === Number(user.user_id))?.charger_id || '',
+        charger_id: myCharger?.charger_id || '',
         total_price: 0,
         used_mileage: 0,
         final_amount: 0,
@@ -212,9 +233,11 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
       const calculatedPrice = Math.max(0, chargedPercent * 340);
       const finalAmount = Math.max(0, calculatedPrice - usedMileage);
 
+      const myCharger = station.chargers.find(c => c.active_user_id && user?.user_id && Number(c.active_user_id) === Number(user.user_id));
+
       await stationService.updatePaymentSession(activeOrderId, {
         station_id: station.station_id,
-        charger_id: station.chargers.find(c => c.active_user_id && user?.user_id && Number(c.active_user_id) === Number(user.user_id))?.charger_id || '',
+        charger_id: myCharger?.charger_id || '',
         total_price: calculatedPrice,
         used_mileage: usedMileage,
         final_amount: finalAmount,
