@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from ...db.session import get_db
 from ...models import models
+from ...models.models import get_kst_now
 from ...schemas import schemas
 from ...utils.redis_sync import update_redis_slots
 from ...db.redis_client import update_station_battery
@@ -32,7 +33,7 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
         print(f"👤 USER ID : {signal.user_id}")
     print("🔌" * 25 + "\n")
 
-    # [100% 복구] 점검 중 상태 보호 로직 로그
+    # [중요: 점검 중 상태 보호 로직]
     if charger.status == "Faulty":
         print(f"🛡️ [Status Lock] {charger.charger_id} is in 'Faulty' state. Skipping IoT status update.")
         if signal.status in ["CONNECTED", "CHARGING"] and signal.battery is not None:
@@ -61,7 +62,7 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
             # 디버깅 로그 복구
             print(f"🔍 [Notification Check] Session:{active_session.order_id[:8]} | User:{user_nickname} | Battery:{signal.battery}% | Target:{target_soc}%")
 
-            # [원본 문구 복구] 충전 시작 알림
+            # 충전 시작 알림
             if not active_session.is_start_notified:
                 title = "⚡ 충전 시작"
                 body = f"{user_nickname}님, {station.station_name}에서 충전이 시작되었습니다. 안전하게 충전해 드릴게요!"
@@ -77,7 +78,7 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
                 active_session.is_80_notified = True
                 db.commit()
 
-            # [원본 문구 복구] 목표 도달 알림
+            # 목표 도달 알림
             if signal.battery >= (target_soc - 0.5) and not active_session.is_completed_notified:
                 title = f"✅ 목표 충전({target_soc}%) 도달"
                 body = f"{user_nickname}님, 설정하신 {target_soc}% 충전이 완료되었습니다. 결제 후 안전하게 출차해 주세요."
@@ -91,9 +92,12 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
 
     if signal.status == "CHARGING":
         new_status = "Charging"
-        # [지능형 가드] 최근 10분 이내에 생성된 PENDING 세션만 매핑하여 유령 충전 방지
-        ten_minutes_ago = datetime.now() - timedelta(minutes=10)
+        # [정밀 수정] DB와 시각 동기화를 위해 get_kst_now() 사용
+        ten_minutes_ago = get_kst_now() - timedelta(minutes=10)
+        
         if not signal.user_id:
+            # 매핑 시도 디버깅 로그 추가
+            print(f"🔍 [Auto Mapping Attempt] Searching sessions created after {ten_minutes_ago}")
             active_session = db.query(models.ChargingSession).filter(
                 models.ChargingSession.charger_id == charger.charger_id,
                 models.ChargingSession.status == "PENDING",
@@ -102,7 +106,9 @@ def receive_connector_signal(signal: schemas.ConnectorSignal, db: Session = Depe
             if active_session:
                 charger.active_user_id = active_session.user_id
                 charger.active_session_id = active_session.order_id
-                print(f"🔗 [Auto Mapping] Charger {charger.charger_id} -> User:{active_session.user_id}")
+                print(f"🔗 [Auto Mapping Success] Charger {charger.charger_id} -> User:{active_session.user_id}")
+            else:
+                print(f"⚠️ [Auto Mapping Fail] No active session found in the last 10 mins.")
         else:
             charger.active_user_id = signal.user_id
             active_session = db.query(models.ChargingSession).filter(
@@ -157,7 +163,7 @@ def receive_camera_signal(signal: schemas.CameraSignal, db: Session = Depends(ge
     print(f"🔍 CONF    : {signal.confidence_score}")
     print("📸" * 25 + "\n")
 
-    # [100% 복구] 점검 중 상태 보호 로직 로그
+    # [중요: 점검 중 상태 보호 로직]
     if charger.status == "Faulty":
         print(f"🛡️ [Vision Lock] {charger.charger_id} is in 'Faulty' state. Ignoring vision signal.")
         return {"success": True, "message": "Charger is under maintenance. Vision signal ignored."}
