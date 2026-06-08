@@ -34,7 +34,7 @@ const formatRelativeTime = (dateString?: string) => {
   return `${diffInDays}일 전`;
 };
 
-export const StationModal: React.FC<StationModalProps> = ({ station, onClose, onShowOnMap }) => {
+export const StationModal: React.FC<StationModalProps> = ({ station, onClose, onShowOnMap, onReport }) => {
   if (!station) return null;
 
   const { isAuthenticated } = useUserStore();
@@ -343,7 +343,9 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
                   }
                   return;
                 }
-                if ((window as any).openReportModal) {
+                if (onReport) {
+                  onReport();
+                } else if ((window as any).openReportModal) {
                   (window as any).openReportModal(station.station_id);
                 }
               }} 
