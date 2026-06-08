@@ -292,32 +292,68 @@ def complete_charging(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """충전 완료 보상 지급 (동적 금액 수용)"""
+    """충전 및 출차 완료 보상 지급 (서버 사이드 정책 계산)"""
     station = db.query(models.Station).filter(models.Station.station_id == station_id).first()
     if not station:
         raise HTTPException(status_code=404, detail="충전소를 찾을 수 없습니다.")
 
-    reward_amount = req.points
+    # [마일리지 정책 2026 반영]
+    # 1. 해당 유저의 최신 결제 완료 세션 조회
+    session = db.query(models.ChargingSession).filter(
+        models.ChargingSession.user_id == current_user.user_id,
+        models.ChargingSession.station_id == station_id,
+        models.ChargingSession.status == "PAID"
+    ).order_by(models.ChargingSession.paid_at.desc()).first()
+
+    reward_amount = 0
+    reason = "충전 완료 보상"
+
+    if session:
+        # 정책 A: 80% 에코 충전 시 기본 500P
+        if session.target_soc == 80:
+            reward_amount = 500
+            reason = "80% 에코 충전 보상"
+        else:
+            # 80%가 아닌 경우 기본 300P (기존 정책 수용)
+            reward_amount = 300
+
+        # 정책 B: 10분(600초) 이내 출차 시 매너 보너스 +100P
+        if session.paid_at:
+            exit_duration = (datetime.now() - session.paid_at).total_seconds()
+            if exit_duration < 600:
+                reward_amount += 100
+                reason += " + 매너 출차 보너스"
+                print(f"✨ [Manner Bonus]: User {current_user.user_id} exited in {exit_duration:.1f}s")
+    else:
+         # 세션을 찾을 수 없는 경우 (Fall-back)
+         reward_amount = req.points if req.points > 0 else 300
+
     current_user.mileage_balance += reward_amount
-    current_user.trust_score = min(100, current_user.trust_score + 2)  # 성실한 충전 완료 시 +2점 회복 (최대 100점)
+    current_user.trust_score = min(100, current_user.trust_score + 2)
 
     db.add(models.MileageLog(
         user_id=current_user.user_id,
-        description=f"충전 완료 보상: {station.station_name}",
+        description=f"{reason}: {station.station_name}",
         amount=reward_amount
     ))
 
     db.commit()
     db.refresh(current_user)
 
-    # 충전 완료 알림 발송
-    trigger_push_notification(db, "⚡ 충전 완료 보상", f"목표 충전 달성 보상으로 {reward_amount}P가 적립되었습니다! (신뢰도 +2점)", user_id=current_user.user_id, tag=f"reward-{station_id}-{datetime.now().strftime('%Y%m%d%H%M')}", n_type="SUCCESS")
+    # 충전 완료 및 보상 알림 발송
+    trigger_push_notification(
+        db, "⚡ 보상 적립 완료", 
+        f"{reason}으로 {reward_amount}P가 적립되었습니다! (신뢰도 +2점)", 
+        user_id=current_user.user_id, 
+        tag=f"reward-{station_id}-{datetime.now().strftime('%H%M%S')}", 
+        n_type="SUCCESS"
+    )
 
     return {
         "success": True,
         "points_added": reward_amount,
         "total_balance": current_user.mileage_balance,
-        "message": "충전 보상이 지급되었습니다."
+        "message": f"{reason}이 지급되었습니다."
     }
 
 @router.get("/directions", response_model=schemas.DirectionResponse)

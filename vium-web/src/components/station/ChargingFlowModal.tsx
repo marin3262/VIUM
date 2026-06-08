@@ -147,7 +147,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
               
               // [UX 개선]: 출차가 확인되면 3초 후 자동으로 모달을 닫고 정산 완료
               setTimeout(() => {
-                const finalReward = (targetSoc - Math.round(currentSoc)) * 10 + (targetSoc <= 80 ? 200 : 0) + 1000;
+                const finalReward = (targetSoc === 80 ? 500 : 300) + 100;
                 onComplete(finalReward);
                 onClose();
               }, 4000);
@@ -262,56 +262,39 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
   };
 
   const reward = useMemo(() => {
-    const charged = Math.max(0, targetSoc - Math.round(currentSoc));
-    const base = charged * 10;
-    const eco = targetSoc <= 80 ? 200 : 0;
-    const manner = 1000;
+    const base = targetSoc === 80 ? 500 : 300;
+    const manner = 100;
     return {
-      base, eco, manner,
-      total: base + eco + manner
+      base, manner,
+      total: base + manner
     };
-  }, [targetSoc, currentSoc]);
+  }, [targetSoc]);
 
   if (step === 'SUCCESS') {
     return (
       <div className="fixed inset-0 z-[100] bg-white flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500 overflow-hidden">
-        <div className="w-24 h-24 bg-blue-600 rounded-[32px] flex items-center justify-center mb-8 shadow-2xl shadow-blue-200 rotate-3">
+        <div className="w-24 h-24 bg-green-600 rounded-[32px] flex items-center justify-center mb-8 shadow-2xl shadow-green-200 rotate-3">
           <Car size={48} className="text-white -rotate-3" />
         </div>
-        <h2 className="text-4xl font-black text-gray-900 tracking-tighter italic uppercase mb-2">Goodbye!</h2>
+        <h2 className="text-4xl font-black text-gray-900 tracking-tighter italic uppercase mb-2">Exit Complete!</h2>
         <p className="text-gray-500 font-bold mb-12 leading-relaxed">
-          안전하게 출차가 확인되었습니다.<br/>
+          출차가 완료되었습니다.<br/>
           오늘도 VIUM과 함께 쾌적한 드라이빙 되세요.
         </p>
 
-        <div className="w-full max-w-sm bg-gray-50 rounded-[40px] border border-gray-100 p-8 mb-12 space-y-4">
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-400 font-bold uppercase tracking-widest">기본 보상</span>
-            <span className="font-black text-gray-900">+{reward.base}P</span>
+        <div className="w-full max-w-sm bg-blue-50 rounded-[40px] border border-blue-100 p-10 mb-12">
+          <p className="text-blue-400 font-black uppercase text-xs tracking-widest mb-2">Total Earned Mileage</p>
+          <div className="flex items-center justify-center gap-2">
+            <Zap size={24} className="text-blue-600 fill-blue-600" />
+            <span className="text-5xl font-black text-blue-600 tracking-tighter">{reward.total.toLocaleString()} P</span>
           </div>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-400 font-bold uppercase tracking-widest">에코 보너스</span>
-            <span className="font-black text-indigo-600">+{reward.eco}P</span>
-          </div>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-gray-400 font-bold uppercase tracking-widest">매너 출차 보너스</span>
-            <span className="font-black text-blue-600">+{reward.manner}P</span>
-          </div>
-          <div className="h-px bg-gray-200 my-4"></div>
-          <div className="flex justify-between items-center pt-2">
-            <span className="text-xl font-black text-gray-900 italic">적립 마일리지</span>
-            <span className="text-3xl font-black text-blue-600">{reward.total.toLocaleString()} P</span>
-          </div>
-          <p className="text-[10px] text-gray-400 font-bold leading-relaxed text-left border-t border-gray-200 pt-3 px-1">
-            * 기본 보상 및 매너 출차 보너스가<br/>포함된 금액입니다.
-          </p>
         </div>
 
         <button 
           onClick={() => { onComplete(reward.total); onClose(); }}
-          className="w-full max-w-sm py-6 bg-blue-600 text-white rounded-[28px] font-black text-lg shadow-xl active:scale-95 transition-all hover:bg-blue-700"
+          className="w-full max-w-sm py-6 bg-gray-900 text-white rounded-[28px] font-black text-lg shadow-xl active:scale-95 transition-all hover:bg-black"
         >
-          완료
+          확인
         </button>
       </div>
     );
