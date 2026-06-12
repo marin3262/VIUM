@@ -7,6 +7,8 @@ import type { ChargingStation } from '../../types';
 
 const TOSS_CLIENT_KEY = "test_ck_DnyRpQWGrNlgeqqGLm5L3Kwv1M9E";
 
+// 충전 프로세스를 6가지 단계로 정의해서 관리합니다. 
+// 이렇게 상태를 나눠놓아야 복잡한 흐름을 제어하기 편하더라구요.
 type FlowStep = 'CONNECTION_PROMPT' | 'CONFIRM_CHARGE' | 'CHARGING' | 'BILLING' | 'WAITING_EXIT' | 'SUCCESS';
 
 interface ChargingFlowModalProps {
@@ -24,11 +26,13 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
 }) => {
   const { user, fetchUser } = useUserStore();
   const [step, setStep] = useState<FlowStep>(initialStep);
-  const [currentSoc, setCurrentSoc] = useState(30);
-  const [targetSoc, setTargetSoc] = useState(80);
-  const [progress, setProgress] = useState(30);
+  const [currentSoc] = useState(30); // 현재 배터리 상태
+  const [targetSoc, setTargetSoc] = useState(80); // 사용자가 설정한 목표치
+  const [progress, setProgress] = useState(30); // 시각적인 충전 진행률
   const [usedMileage, setUsedMileage] = useState(0);
   const [totalPrice, setTotalPrice] = useState(0);
+  
+  // 토스 결제 후 돌아왔을 때 이전 상태를 복구하기 위해 세션 스토리지를 활용합니다.
   const [activeOrderId, setActiveOrderId] = useState<string | null>(() => {
     return sessionStorage.getItem('vium_last_order_id');
   });
@@ -40,7 +44,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
   const hasSyncedInitialBattery = useRef(false);
   const chargerIdRef = useRef<string | null>(null);
 
-  // 0. 초기 충전기 ID 식별 (매핑 추적용)
+  // 현재 내가 사용 중인 충전기(호기)가 무엇인지 식별하는 로직입니다.
   useEffect(() => {
     const myCharger = station.chargers.find(c => 
       (c.active_user_id && user?.user_id && Number(c.active_user_id) === Number(user.user_id)) ||
@@ -51,7 +55,8 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
     }
   }, [station, user, activeOrderId]);
 
-  // 1. 하드웨어 연결 감시
+  // [단계 1] 사용자가 차량에 커넥터를 실제로 꽂았는지 감시합니다.
+  // 아두이노 센서가 'Charging' 상태를 보내면 자동으로 다음 설정 화면으로 넘어가요!
   useEffect(() => {
     if (step !== 'CONNECTION_PROMPT') return;
 
@@ -61,7 +66,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
         if (response.success && response.data) {
           const currentStation = response.data.find(s => s.station_id === station.station_id);
           if (currentStation) {
-            // [정밀 수술]: Number()를 사용하여 회원 ID 매핑 무결성 확보
+            // 내가 찜한 충전기에서 신호가 오는지 체크합니다.
             const charger = currentStation.chargers.find(c => 
               c.active_user_id && user?.user_id && 
               Number(c.active_user_id) === Number(user.user_id)
@@ -70,7 +75,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
             if (charger?.status === 'Charging' && !hasSyncedInitialBattery.current) {
               if (currentStation.current_battery !== undefined) {
                 const initialSoc = Math.round(currentStation.current_battery);
-                setCurrentSoc(initialSoc);
                 setTargetSoc(Math.min(100, Math.max(initialSoc + 10, 80)));
                 setProgress(initialSoc);
                 hasSyncedInitialBattery.current = true;
@@ -88,17 +92,17 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
     return () => clearInterval(interval);
   }, [station, user, step]);
 
-  // 2. 실시간 배터리 동기화 (CHARGING 중 서버 데이터 덮어쓰기 방지)
+  // 충전 중에는 서버 데이터가 내 화면의 애니메이션을 방해하지 못하도록 가드를 쳐줍니다.
   useEffect(() => {
     if (step === 'CHARGING' || step === 'BILLING' || step === 'WAITING_EXIT' || step === 'SUCCESS') return;
     if (station.current_battery !== undefined && !hasSyncedInitialBattery.current) {
       const val = Math.round(station.current_battery);
-      setCurrentSoc(val);
       setProgress(val);
     }
   }, [station.current_battery, step]);
 
-  // 3. 충전 시뮬레이션
+  // [단계 3] 충전 시뮬레이션 애니메이션입니다.
+  // 실제 충전 속도보다는 시각적인 피드백을 위해 조금 더 빠르게 차오르도록 설정했어요.
   useEffect(() => {
     if (step === 'CHARGING') {
       const interval = setInterval(() => {
@@ -106,6 +110,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
           if (p >= targetSoc) {
             clearInterval(interval);
             
+            // 목표치 도달 시 브라우저 알림을 띄워줍니다.
             if (Notification.permission === "granted") {
                 new Notification(`✅ 목표 충전(${targetSoc}%) 도달`, {
                     body: `${user?.nickname || '회원'}님, 설정하신 목표치까지 충전이 완료되었습니다.`,
@@ -113,7 +118,8 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
                 });
             }
 
-            const chargedPercent = targetSoc - Math.round(currentSoc);
+            // 충전량에 따라 요금을 계산해서 정산 단계로 넘깁니다.
+            const chargedPercent = targetSoc - Math.round(progress);
             const calculatedPrice = Math.max(0, chargedPercent * 340);
             setTotalPrice(calculatedPrice);
             setStep('BILLING');
@@ -124,9 +130,10 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
       }, 100);
       return () => clearInterval(interval);
     }
-  }, [step, targetSoc, currentSoc, user]);
+  }, [step, targetSoc, user]);
 
-  // 4. 결제 완료 후 대기 상태 모니터링 (출차 감지)
+  // [단계 4] 결제 후 차를 빼는 과정을 모니터링합니다.
+  // 커넥터를 뽑고 차가 주차 구역을 벗어나면('Available') 최종 성공 화면으로 바뀝니다.
   useEffect(() => {
     if (step !== 'WAITING_EXIT') return;
 
@@ -135,7 +142,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
       if (response.success && response.data) {
         const currentStation = response.data.find(s => s.station_id === station.station_id);
         if (currentStation) {
-          // [중요 수술]: 세션 ID가 삭제될 수 있으므로 호기 ID로 직접 추적
           const charger = currentStation.chargers.find(c => c.charger_id === chargerIdRef.current);
           if (charger) {
             if (charger.status === 'Occupied' && !isConnectorDisconnected) {
@@ -145,7 +151,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
               setStep('SUCCESS');
               clearInterval(interval);
               
-              // [UX 개선]: 출차가 확인되면 3초 후 자동으로 모달을 닫고 정산 완료
+              // 출차가 확인되면 4초 뒤에 기분 좋게 보상을 띄우며 모달을 닫아줍니다.
               setTimeout(() => {
                 const finalReward = (targetSoc === 80 ? 500 : 300) + 100;
                 onComplete(finalReward);
@@ -157,9 +163,10 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
       }
     }, 3000);
     return () => clearInterval(interval);
-  }, [step, station.station_id, targetSoc, currentSoc, onComplete, onClose, isConnectorDisconnected]);
+  }, [step, station.station_id, targetSoc, onComplete, onClose, isConnectorDisconnected]);
 
-  // 5. 결제 리다이렉트 복구 및 최종 승인
+  // [결제 복구 로직] 토스페이먼츠 결제 성공 리다이렉트 시 실행됩니다.
+  // 새로고침된 페이지에서도 '결제 완료'임을 인지하고 흐름을 이어가게 해주는 아주 중요한 코드예요!
   useEffect(() => {
     if (initialStep === 'BILLING' && step === 'BILLING') {
       const params = new URLSearchParams(window.location.search);
@@ -186,9 +193,9 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
             });
             if (res.success) {
               sessionStorage.setItem(confirmedKey, 'true');
-              await fetchUser(); 
+              await fetchUser(); // 마일리지가 차감됐을 테니 유저 정보도 갱신해줍니다.
               setStep('WAITING_EXIT');
-              window.history.replaceState({}, '', '/');
+              window.history.replaceState({}, '', '/'); // URL 지저분한 파라미터들 청소!
             }
           } catch (e) {
             console.error("Payment confirmation failed", e);
@@ -200,6 +207,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
     }
   }, [initialStep, step, fetchUser]);
 
+  // 충전 시작 버튼 클릭 시 서버에 '충전 세션'을 먼저 만들어둡니다.
   const handleStartChargingFlow = async () => {
     try {
       const myCharger = station.chargers.find(c => c.active_user_id && user?.user_id && Number(c.active_user_id) === Number(user.user_id));
@@ -225,16 +233,18 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
     }
   };
 
+  // 실제 결제 요청을 토스 서버에 보냅니다.
   const handlePayment = async () => {
     if (!activeOrderId) return;
     setIsProcessingPayment(true);
     try {
-      const chargedPercent = targetSoc - Math.round(currentSoc);
+      const chargedPercent = targetSoc - Math.round(progress);
       const calculatedPrice = Math.max(0, chargedPercent * 340);
       const finalAmount = Math.max(0, calculatedPrice - usedMileage);
 
       const myCharger = station.chargers.find(c => c.active_user_id && user?.user_id && Number(c.active_user_id) === Number(user.user_id));
 
+      // 결제 직전 최종 금액과 마일리지 사용액을 서버에 동기화해둡니다.
       await stationService.updatePaymentSession(activeOrderId, {
         station_id: station.station_id,
         charger_id: myCharger?.charger_id || '',
@@ -261,6 +271,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
     }
   };
 
+  // 정책에 따른 예상 보상을 실시간으로 계산해줍니다. (80% 에코 보너스 + 매너 보너스)
   const reward = useMemo(() => {
     const base = targetSoc === 80 ? 500 : 300;
     const manner = 100;
@@ -270,6 +281,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
     };
   }, [targetSoc]);
 
+  // 모든 과정이 끝났을 때 보여주는 성공 화면입니다.
   if (step === 'SUCCESS') {
     return (
       <div className="fixed inset-0 z-[100] bg-white flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-500 overflow-hidden">
@@ -304,6 +316,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
     <div className="fixed inset-0 z-[100] bg-white flex flex-col animate-in fade-in duration-500 overflow-hidden lg:inset-auto lg:top-1/2 lg:left-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-[450px] lg:h-[90vh] lg:rounded-[40px] lg:shadow-2xl lg:border lg:border-gray-100">
       <div className="flex-1 flex flex-col justify-center px-6 sm:px-10">
         
+        {/* 단계별 UI 렌더링 - 가독성을 위해 테일윈드 클래스로 예쁘게 꾸몄습니다! */}
         {step === 'CONNECTION_PROMPT' && (
           <div className="space-y-10 text-center animate-in zoom-in-95 duration-500">
             <div className="relative">
@@ -333,7 +346,7 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
             <div className="bg-gray-50 p-8 rounded-[40px] border border-gray-100 space-y-8">
               <div className="flex justify-between items-center">
                 <span className="text-gray-400 font-black uppercase text-xs tracking-widest">현재 배터리</span>
-                <span className="text-2xl font-black text-indigo-600 italic">{Math.round(currentSoc)}%</span>
+                <span className="text-2xl font-black text-indigo-600 italic">{Math.round(progress)}%</span>
               </div>
               
               <div className="space-y-4">
@@ -343,17 +356,13 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
                 </div>
                 <input 
                   type="range" 
-                  min={Math.max(Math.round(currentSoc), 10)} 
+                  min={Math.max(Math.round(progress), 10)} 
                   max="100" 
                   step="1"
                   value={targetSoc} 
                   onChange={(e) => setTargetSoc(Number(e.target.value))}
                   className="w-full h-3 bg-gray-200 rounded-full appearance-none cursor-pointer accent-indigo-600"
                 />
-                <div className="flex justify-between text-[10px] text-gray-400 font-black uppercase tracking-tighter px-1">
-                  <span>{Math.max(Math.round(currentSoc), 10)}%</span>
-                  <span>100% Full</span>
-                </div>
               </div>
 
               <div className="pt-4 border-t border-gray-200">
@@ -402,8 +411,8 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
 
             <div className="bg-gray-50 p-8 rounded-[40px] border-2 border-dashed border-gray-200 space-y-6">
               <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-400 font-black uppercase tracking-widest">충전 진행</span>
-                <span className="font-black text-gray-900 italic">{Math.round(currentSoc)}% ➔ {targetSoc}%</span>
+                <span className="text-gray-400 font-black uppercase tracking-widest">충전 요금 (단가 340원)</span>
+                <span className="font-black text-gray-900 italic">{totalPrice.toLocaleString()}원</span>
               </div>
               
               <div className="space-y-4 pt-4 border-t border-gray-200">
@@ -440,7 +449,6 @@ export const ChargingFlowModal: React.FC<ChargingFlowModalProps> = ({
               >
                 {isProcessingPayment ? <Loader2 className="animate-spin" size={24} /> : <><CreditCard size={24} /> 결제 및 정산하기</>}
               </button>
-              <p className="text-[10px] text-gray-400 text-center font-bold">결제 버튼 클릭 시 토스페이먼츠 안전 결제창으로 이동합니다.</p>
             </div>
           </div>
         )}

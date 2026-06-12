@@ -9,7 +9,7 @@ import { stationService } from '../../services/stationService';
 
 interface ReviewModalProps {
   station: ChargingStation | null;
-  editReview?: Review | null; // 신규: 수정 모드 지원
+  editReview?: Review | null; // [수정 모드 지원] 마이페이지에서 리뷰를 수정할 때도 이 컴포넌트를 재사용합니다.
   onClose: () => void;
 }
 
@@ -24,9 +24,10 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, editReview, o
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
+  // 현재 이 모달이 '신규 등록'인지 '기존 수정'인지 판별하는 플래그예요.
   const isEditMode = !!editReview;
 
-  // 수정 모드일 경우 데이터 초기화
+  // 수정 모드일 경우, 유저가 썼던 기존 데이터를 불러와서 폼을 채워줍니다.
   useEffect(() => {
     if (editReview) {
       setRating(editReview.rating);
@@ -36,6 +37,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, editReview, o
 
   if (!station) return null;
 
+  // 최소 5자 이상은 써야 등록이 가능하게끔 간단한 유효성 검사를 넣었습니다.
   const isValid = content.trim().length >= 5;
 
   const handleSubmit = async () => {
@@ -45,7 +47,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, editReview, o
 
     try {
       if (isEditMode && editReview) {
-        // --- 1. 수정 로직 ---
+        // --- 1. 리뷰 수정 분기 ---
         const response = await updateReviewAction(editReview.id, rating, content.trim());
         if (response.success) {
           addNotification({
@@ -59,14 +61,17 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, editReview, o
           alert(response.error || '리뷰 수정 중 오류가 발생했습니다.');
         }
       } else {
-        // --- 2. 신규 등록 로직 ---
+        // --- 2. 신규 리뷰 등록 분기 ---
         const response = await stationService.submitReview(station.station_id, {
           rating,
           content: content.trim()
         } as any);
 
         if (response.success) {
+          // 데이터가 바뀌었으니 내 정보와 지도 정보를 실시간으로 다시 불러옵니다.
           await Promise.all([fetchUser(), fetchStations()]);
+          
+          // 포인트 적립 애니메이션과 알림을 동시에 띄워 성취감을 줍니다!
           triggerRewardAnimation(100);
           addNotification({
             role: 'USER',
@@ -111,12 +116,11 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, editReview, o
                 onClick={onClose} 
                 className="p-2 text-gray-300 hover:text-gray-500 transition-colors"
                 disabled={isSubmitting}
-              >
-                <X size={20} />
-              </button>
+              ><X size={20} /></button>
             </div>
 
             <div className="flex-1 overflow-y-auto px-8 space-y-6 no-scrollbar">
+              {/* 별점 선택 UI: 직관적으로 터치해서 바꿀 수 있게 만들었어요. */}
               <div className="flex justify-center gap-2">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button 
@@ -148,18 +152,12 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({ station, editReview, o
               <button 
                 disabled={!isValid || isSubmitting}
                 onClick={handleSubmit}
-                className={`w-full ${isEditMode ? 'bg-indigo-600' : 'bg-blue-600'} disabled:bg-gray-200 text-white py-5 rounded-3xl text-lg font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95`}
+                className={`w-full ${isEditMode ? 'bg-indigo-600 shadow-indigo-100' : 'bg-blue-600 shadow-blue-100'} disabled:bg-gray-200 text-white py-5 rounded-3xl text-lg font-black shadow-xl flex items-center justify-center gap-2 transition-all active:scale-95`}
               >
                 {isSubmitting ? (
-                  <>
-                    <Loader2 size={20} className="animate-spin" />
-                    {isEditMode ? '리뷰 수정 중...' : '리뷰 등록 중...'}
-                  </>
+                  <><Loader2 size={20} className="animate-spin" /> {isEditMode ? '수정 내용 저장 중' : '리뷰 등록 중'}</>
                 ) : (
-                  <>
-                    {isEditMode ? <Send size={20} /> : null}
-                    {isEditMode ? '수정 내용 저장하기' : '리뷰 등록 및 보상 받기'}
-                  </>
+                  <>{isEditMode ? <Send size={20} /> : null} {isEditMode ? '수정 내용 저장하기' : '리뷰 등록 및 보상 받기'}</>
                 )}
               </button>
             </div>

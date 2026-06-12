@@ -9,6 +9,8 @@ import type { ChargingStation } from '../../types';
 
 const TOSS_CLIENT_KEY = "test_ck_DnyRpQWGrNlgeqqGLm5L3Kwv1M9E";
 
+// 비회원 충전 과정을 6단계로 관리합니다. 
+// 회원가입 없이 QR로 바로 들어온 분들이라, 안내 문구 하나하나에 신경을 많이 썼어요!
 type FlowStep = 'CONNECTION_PROMPT' | 'CONFIRM_CHARGE' | 'CHARGING' | 'BILLING' | 'WAITING_EXIT' | 'SUCCESS';
 
 interface GuestChargePageProps {

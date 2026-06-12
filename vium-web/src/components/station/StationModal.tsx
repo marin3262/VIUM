@@ -13,9 +13,11 @@ interface StationModalProps {
   station: ChargingStation | null;
   onClose: () => void;
   onShowOnMap: () => void; 
-  onReport?: () => void; // 신규: 제보하기 액션
+  onReport?: () => void; 
 }
 
+// 충전기를 마지막으로 쓴 게 언제인지 알려주는 함수입니다.
+// '10분 전', '방금 전' 처럼 친근하게 표시해야 유저들이 안심하고 방문할 것 같아서 만들었어요!
 const formatRelativeTime = (dateString?: string) => {
   if (!dateString) return "점검 완료";
   const date = new Date(dateString);
@@ -49,20 +51,23 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
     isLoading: isRouteLoading 
   } = useStationStore();
 
-  // [은밀한 트리거] 시연을 위한 호기 선점 로직
+  // [시연용 비밀 트리거] 하드웨어가 "누가 꽂았는지" 자동으로 알아채기 전에, 
+  // 앱에서 미리 이 충전기를 내가 쓸 거라고 서버에 살짝 알려주는 단계입니다. 
+  // 실제 서비스라면 PnC(Plug & Charge) 같은 복잡한 보안 로직이 들어갈 부분이에요!
   const handleHiddenClaim = async (chargerId: string) => {
     try {
       await apiClient.post(`/hardware/claim?charger_id=${chargerId}`, {});
       console.log("🤫 [Secret Claim Initiated]", chargerId);
     } catch (e) {
-      // 시연용이므로 조용히 처리
+      // 시연용이므로 에러가 나도 조용히 넘어갑니다.
     }
   };
 
   const availableSlots = getAvailableSlots(station);
   const totalSlots = station.chargers.length;
 
-  // 0. 실시간 거리 계산 함수 (Haversine Formula)
+  // [하버사인 공식 적용] 지도 앱처럼 내 위치와 충전소 사이의 직선 거리를 계산해줍니다.
+  // 위경도 좌표로 거리를 구하는 게 생각보다 까다로웠지만, 정확한 정보를 위해 꼭 넣고 싶었던 로직이에요.
   const calculatedDistance = useMemo(() => {
     if (!userLocation || !station.latitude || !station.longitude) return null;
     
@@ -79,7 +84,7 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
       Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * 
       Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distance = R * c; // km 단위 거리
+    const distance = R * c; 
     
     if (distance < 1) {
       return `${Math.round(distance * 1000)}m`;
@@ -87,7 +92,7 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
     return `${distance.toFixed(1)}km`;
   }, [userLocation, station.latitude, station.longitude]);
 
-  // 길찾기 실행 핸들러
+  // 카카오 모빌리티 API를 써서 실제 도로 기반의 경로를 찾아주는 함수입니다.
   const handleGetDirections = () => {
     if (!navigator.geolocation) {
       alert("이 브라우저에서는 GPS를 지원하지 않습니다.");
@@ -100,13 +105,14 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
         const origin = { lat: latitude, lng: longitude };
         
         setUserLocation(origin);
+        // 백엔드 프록시 서버를 통해 안전하게 카카오 API 정보를 가져옵니다.
         await fetchRoute(
           origin, 
           { lat: Number(station.latitude), lng: Number(station.longitude) },
           station.station_name
         );
         
-        onShowOnMap();
+        onShowOnMap(); // 경로가 생기면 지도로 화면을 전환!
         onClose();
       },
       (error) => {
@@ -122,6 +128,8 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
     onClose();
   };
 
+  // [요금 리얼리즘] 한전 API에서 실시간 요금 추이를 안 줘서, 직접 24시간 부하 모델링을 했어요!
+  // 밤에는 싸고, 낮 피크 시간에는 비싼 실제 전기 요금 체계를 흉내 내서 그래프를 그립니다.
   const displayPriceHistory = useMemo(() => {
     let history = station.priceHistory;
     if (typeof history === 'string') {
@@ -130,11 +138,9 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
     if (!Array.isArray(history) || history.length < 24) {
       const base = station.price || 340;
       return Array.from({ length: 24 }, (_, i) => {
-        // 전통적 부하(Peak-load) 모델: 심야 저가, 점심/저녁 피크
-        if (i >= 23 || i <= 7) return base - 70; // 심야/새벽 경부하 (최저)
-        if ((i >= 11 && i <= 13) || (i >= 18 && i <= 20)) return base + 60; // 점심 및 저녁 피크 (최고)
-        if ((i >= 8 && i <= 10) || (i >= 14 && i <= 17) || (i >= 21 && i <= 22)) return base + (i % 2 === 0 ? 5 : -5); // 중간 부하
-        return base;
+        if (i >= 23 || i <= 7) return base - 70; // 심야 (저렴!)
+        if ((i >= 11 && i <= 13) || (i >= 18 && i <= 20)) return base + 60; // 피크 타임 (비쌈 ㅠㅠ)
+        return base + (i % 2 === 0 ? 5 : -5); // 평시
       });
     }
     return history;
@@ -144,6 +150,7 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
   const maxPrice = Math.max(...displayPriceHistory);
   const priceRange = (maxPrice - minPrice) || 100;
 
+  // 리뷰도 최신순으로 정렬해서 보여줘야 유저들이 가장 따끈따끈한 정보를 보겠죠?
   const sortedReviews = useMemo(() => {
     if (!station.reviews) return [];
     return [...station.reviews]
@@ -159,6 +166,7 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
     return (total / sortedReviews.length).toFixed(1);
   }, [sortedReviews]);
 
+  // 하드웨어 신호에 따라 충전기의 4가지 상태를 정의했습니다.
   const statusConfig: Record<StationStatus, { label: string, color: string, bg: string, icon: any, anim?: string }> = {
     'Available': { label: '사용 가능', color: 'text-green-600', bg: 'bg-green-50', icon: Power },
     'Occupied': { label: '주차 중 (비충전)', color: 'text-orange-500', bg: 'bg-orange-50', icon: Car },
@@ -168,8 +176,10 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
 
   return (
     <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center p-0 lg:p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-300">
+      {/* 바텀 시트 스타일의 상세 정보 모달 */}
       <div className="bg-white w-full max-w-lg h-[100dvh] lg:h-auto lg:max-h-[95vh] rounded-t-[40px] lg:rounded-[40px] overflow-hidden shadow-2xl animate-in slide-in-from-bottom-10 lg:slide-in-from-bottom-0 lg:zoom-in-95 duration-500 flex flex-col">
         
+        {/* 상단 헤더: 그라데이션을 줘서 고급스럽게 뽑아봤어요. */}
         <div className="relative min-h-[140px] lg:min-h-[160px] bg-gradient-to-br from-blue-600 to-indigo-700 p-6 lg:p-8 flex flex-col justify-end shrink-0">
           <button onClick={handleClose} className="absolute top-4 right-4 lg:top-6 lg:right-6 p-2 bg-white/20 hover:bg-white/30 rounded-full text-white transition-all z-10"><X size={20} /></button>
           <div className="space-y-2 pr-10">
@@ -181,7 +191,9 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
           </div>
         </div>
 
+        {/* 메인 콘텐츠 영역: 스크롤이 가능하게 설정했습니다. */}
         <div className="p-6 space-y-6 overflow-y-auto no-scrollbar flex-1 pb-32 lg:pb-8">
+          {/* 핵심 요약 지표 */}
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-blue-50 p-3 rounded-2xl border border-blue-100 flex flex-col items-center">
               <Zap className="text-blue-600 mb-1" size={18} />
@@ -200,6 +212,7 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
             </div>
           </div>
 
+          {/* 충전기별 실시간 개별 상태 카드 */}
           <div className="space-y-4">
             <h3 className="text-sm font-black text-gray-900 flex items-center gap-2 px-1">
               <Activity size={16} className="text-blue-500" /> 실시간 충전기 현황
@@ -242,6 +255,7 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
             </div>
           </div>
 
+          {/* 요금 추이 그래프: 막대 그래프 형식으로 시각화했습니다. */}
           <div className="space-y-4 bg-gray-50 p-5 rounded-[32px] border border-gray-100">
             <div className="flex justify-between items-end">
               <h3 className="text-sm font-black text-gray-900 flex items-center gap-2"><TrendingUp size={16} className="text-blue-500" /> 24시간 요금 추이</h3>
@@ -277,6 +291,7 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
             <div className="h-2"></div>
           </div>
 
+          {/* 리뷰 목록: 실제 유저들이 남긴 소중한 후기들입니다. */}
           <div className="space-y-4">
             <h3 className="text-sm font-black text-gray-900 flex items-center gap-2 px-1">
               <MessageSquare size={16} className="text-blue-500" /> 커뮤니티 리뷰 ({sortedReviews.length})
@@ -313,6 +328,7 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
             </div>
           </div>
 
+          {/* 하단 플로팅 액션 버튼바 */}
           <div className="flex gap-2 pt-2">
             <button 
               onClick={onShowOnMap}
@@ -335,6 +351,7 @@ export const StationModal: React.FC<StationModalProps> = ({ station, onClose, on
               )}
             </button>
 
+            {/* 고장 제보 버튼: 비로그인 상태면 로그인 창을 띄워줍니다. */}
             <button 
               onClick={() => {
                 if (!isAuthenticated) {

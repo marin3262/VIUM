@@ -5,9 +5,9 @@ import type { ChargingStation } from "../../types";
 
 interface StationMapProps {
   stations: ChargingStation[];
-  onMarkerClick: (station: ChargingStation) => void;
+  onMarkerClick: (station) => void;
   onMapClick?: () => void;
-  onViewStationInfo?: (stationId: string) => void; // 신규: 요약 정보/상세 보기 연동
+  onViewStationInfo?: (stationId: string) => void; 
   isLoading: boolean;
 }
 
@@ -27,10 +27,13 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
   const container = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const clustererInstance = useRef<any>(null);
+  
+  // 마커들을 관리할 Map 객체입니다. 
+  // 3초마다 데이터를 새로 가져올 때 바뀐 부분만 업데이트해서 화면 깜빡임을 없애려고 도입했어요!
   const markersRef = useRef<Map<string, MarkerState>>(new Map());
   const [isReady, setIsReady] = useState(false);
   
-  const [isUserDragging, setIsUserDragging] = useState(false); // 드래그 중 업데이트 방지
+  const [isUserDragging, setIsUserDragging] = useState(false); 
   const { 
     getAvailableSlots, 
     userLocation, 
@@ -43,7 +46,7 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
   const userMarkerRef = useRef<any>(null);
   const polylineRef = useRef<any>(null);
 
-  // 내 위치 잡기 핸들러
+  // 현재 내 위치를 찾아서 지도의 중심으로 이동시키는 함수입니다.
   const handleMyLocation = () => {
     if (!navigator.geolocation) return;
     
@@ -63,7 +66,8 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
     );
   };
 
-  // 1. 카카오 지도 API 로드 대기
+  // [중요] 카카오 지도 SDK는 비동기로 로드되기 때문에, 
+  // window.kakao 객체가 준비될 때까지 기다렸다가 지도를 그려야 에러가 안 나더라구요.
   useEffect(() => {
     const initMap = () => {
       window.kakao.maps.load(() => {
@@ -78,6 +82,7 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
         initMap();
       }
     } else {
+      // SDK가 아직 안 왔다면 300ms 간격으로 계속 체크해줍니다 (폴링 방식)
       const check = setInterval(() => {
         if (window.kakao && window.kakao.maps) {
           initMap();
@@ -88,13 +93,14 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
     }
   }, []);
 
-  // 2. 동적 SVG 마커 이미지 생성 함수
+  // 마커 이미지를 고정된 파일이 아니라 SVG 코드로 직접 그렸습니다.
+  // 이렇게 하면 '이용 가능' 대수나 '고장 여부'에 따라 색상을 실시간으로 바꿀 수 있어서 훨씬 유연해요.
   const createSvgMarkerUri = useCallback((available: number, total: number, chargers: any[]) => {
-    let color = '#2563eb';
+    let color = '#2563eb'; // 기본: 파란색 (여유 있음)
     if (available === 0) {
       const isAllFaulty = chargers.length > 0 && chargers.every(c => c.status === 'Faulty');
-      if (isAllFaulty) color = '#ef4444';
-      else color = '#f97316';
+      if (isAllFaulty) color = '#ef4444'; // 빨간색 (전체 고장)
+      else color = '#f97316'; // 주황색 (모두 사용 중)
     }
 
     const svg = `
@@ -111,13 +117,13 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   }, []);
 
-  // 3. 지도 및 클러스터러 초기화
+  // 지도를 처음 띄울 때의 설정값과 마커들을 뭉쳐서 보여줄 클러스터러를 초기화합니다.
   useEffect(() => {
     if (!isReady || !container.current) return;
 
     if (!mapInstance.current) {
       const options = {
-        center: new window.kakao.maps.LatLng(37.7853, 127.0457),
+        center: new window.kakao.maps.LatLng(37.7853, 127.0457), // 초기 중심 좌표 (양주시 근처)
         level: 8,
         draggable: true,
         scrollwheel: true,
@@ -125,17 +131,18 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
       const map = new window.kakao.maps.Map(container.current, options);
       mapInstance.current = map;
 
-      // 상호작용 감지
+      // 지도를 움직이거나 클릭했을 때의 이벤트를 등록합니다.
       window.kakao.maps.event.addListener(map, 'dragstart', () => setIsUserDragging(true));
       window.kakao.maps.event.addListener(map, 'dragend', () => setIsUserDragging(false));
       window.kakao.maps.event.addListener(map, 'click', () => {
         if (onMapClick) onMapClick();
       });
 
+      // 마커가 너무 많으면 지저분하니까 클러스터링(뭉치기) 기능을 적용했어요.
       const clusterer = new window.kakao.maps.MarkerClusterer({
         map: map,
         averageCenter: true,
-        minLevel: 2, // 아주 낮은 레벨까지 클러스터링 유지
+        minLevel: 2, 
         styles: [{
           width: '52px', height: '52px',
           background: 'rgba(37, 99, 235, 0.9)',
@@ -152,6 +159,7 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
       });
       clustererInstance.current = clusterer;
 
+      // 외부(App.tsx 등)에서 특정 충전소 위치로 지도를 이동시키고 싶을 때 호출하는 브릿지 함수입니다.
       window.focusStationOnMap = (stationId: string) => {
         const target = useStationStore.getState().stations.find(s => s.station_id === stationId);
         if (target && mapInstance.current) {
@@ -165,6 +173,7 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
         }
       };
 
+      // [UX 꿀팁] 사이드바가 열리거나 지도가 커질 때 레이아웃이 깨지지 않도록 강제로 크기를 다시 계산해주는 로직이에요.
       let animationFrame: number;
       let startTime: number;
       
@@ -183,14 +192,12 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
           animationFrame = requestAnimationFrame(syncMapSize);
         } else {
           startTime = 0;
-          
           if (mapInstance.current) mapInstance.current.relayout();
         }
       };
 
       const resizeObserver = new ResizeObserver(() => {
         if (mapInstance.current) {
-          
           cancelAnimationFrame(animationFrame);
           startTime = 0;
           animationFrame = requestAnimationFrame(syncMapSize);
@@ -205,18 +212,19 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
     }
   }, [isReady, onMapClick]);
 
-  // 4. 차분 업데이트 기반 마커 관리 (Jittering 및 타입 안전성 확보)
+  // [핵심 성능 최적화] 마커 차분 업데이트 (Diffing) 로직입니다.
+  // 모든 마커를 매번 새로 지우고 그리면 엄청 느려지거든요. 그래서 변경된 마커만 핀포인트로 수정합니다.
   useEffect(() => {
     if (!mapInstance.current || !clustererInstance.current || !isReady) return;
     
-    // 드래그 중에는 업데이트 지연
+    // 유저가 지도를 드래그하고 있을 때는 마커를 안 바꾸는 게 훨씬 부드러워 보여요.
     if (isUserDragging && markersRef.current.size > 0) return;
 
     const clusterer = clustererInstance.current;
     const currentMarkersMap = markersRef.current;
     const nextStationIds = new Set(stations.map(s => s.station_id));
 
-    // 4.1 필터링 제외 마커 제거
+    // 4.1 필터링 결과에서 사라진 충전소 마커들을 지도에서 지워줍니다.
     const markersToRemove: any[] = [];
     for (const [id, state] of currentMarkersMap.entries()) {
       if (!nextStationIds.has(id)) {
@@ -230,19 +238,16 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
       clusterer.removeMarkers(markersToRemove);
     }
 
-    // 4.2 Jittering 알고리즘 적용 및 업데이트
+    // 4.2 [좌표 분산(Jittering)] 똑같은 주소에 충전소가 여러 개 있으면 마커가 겹쳐서 안 보이더라구요.
+    // 꽃잎처럼 아주 살짝씩 빗겨나게 배치해서 모든 마커가 잘 보이도록 했습니다.
     const markersToAdd: any[] = [];
     const coordCounts = new Map<string, number>();
 
     stations.forEach(station => {
-      // [보안] 위경도 타입 안전성 체크 및 강제 변환
       const rawLat = Number(station.latitude);
       const rawLng = Number(station.longitude);
       
-      if (isNaN(rawLat) || isNaN(rawLng)) {
-        console.warn(`[StationMap] Invalid coordinates for station: ${station.station_id}`);
-        return; // 유효하지 않은 좌표는 렌더링 스킵
-      }
+      if (isNaN(rawLat) || isNaN(rawLng)) return;
 
       const coordKey = `${rawLat.toFixed(6)},${rawLng.toFixed(6)}`;
       const samePosCount = coordCounts.get(coordKey) || 0;
@@ -252,6 +257,7 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
       let finalLng = rawLng;
 
       if (samePosCount > 0) {
+        // 황금각(137.5도)을 활용해서 겹치는 마커들을 예쁘게 펴줍니다.
         const angle = (samePosCount * 137.5) * (Math.PI / 180);
         const radius = 0.00004 * Math.sqrt(samePosCount);
         finalLat += radius * Math.cos(angle);
@@ -265,6 +271,7 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
       const existingState = currentMarkersMap.get(station.station_id);
 
       if (existingState) {
+        // 이미 있는 마커라면, 이미지(색상/숫자)만 바뀌었을 때만 업데이트해줘요.
         if (existingState.uri !== markerUri) {
           const markerImage = new window.kakao.maps.MarkerImage(
             markerUri,
@@ -284,6 +291,7 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
           markersToAdd.push(existingState.marker);
         }
       } else {
+        // 새로 등장한 충전소는 마커 객체를 새로 만들어서 Map에 저장합니다.
         const pos = new window.kakao.maps.LatLng(finalLat, finalLng);
         const markerImage = new window.kakao.maps.MarkerImage(
           markerUri,
@@ -316,18 +324,18 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
 
   }, [stations, isReady, onMarkerClick, getAvailableSlots, createSvgMarkerUri, isUserDragging]);
 
-  // 5. 내 위치 마커 및 경로(Polyline) 렌더링
+  // 내 위치 표시(펄스 애니메이션)와 길찾기 경로(Polyline)를 그려주는 부분입니다.
   useEffect(() => {
     if (!isReady || !mapInstance.current) return;
 
     const map = mapInstance.current;
 
-    // 5.1 내 위치 마커 관리
+    // 5.1 내 위치 마커 그리기
     if (userLocation) {
       const pos = new window.kakao.maps.LatLng(userLocation.lat, userLocation.lng);
       
       if (!userMarkerRef.current) {
-        // 커스텀 SVG 마커 (내 위치) - 파란색 펄스 효과
+        // 내 위치는 좀 더 눈에 띄게 파란색 원이 깜빡이는 효과를 줬어요.
         const svg = `
           <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
             <circle cx="18" cy="18" r="14" fill="#3b82f6" fill-opacity="0.2">
@@ -359,9 +367,8 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
       userMarkerRef.current = null;
     }
 
-    // 5.2 경로(Polyline) 관리
+    // 5.2 카카오 길찾기 API에서 준 좌표들을 선(Polyline)으로 이어줍니다.
     if (routePath && routePath.length > 0) {
-      // routePath는 [[lng, lat], ...] 형태이므로 변환 시 주의
       const path = routePath.map(p => new window.kakao.maps.LatLng(p[1], p[0]));
       
       if (polylineRef.current) {
@@ -379,10 +386,10 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
       polyline.setMap(map);
       polylineRef.current = polyline;
 
-      // 5.3 경로가 화면에 다 들어오도록 Bounds 조정
+      // 경로가 화면에 한눈에 들어오도록 지도의 줌 레벨과 중심을 자동으로 맞춰줍니다.
       const bounds = new window.kakao.maps.LatLngBounds();
       path.forEach(pos => bounds.extend(pos));
-      map.setBounds(bounds, 80, 80, 80, 80); // 상하좌우 여백 80px 부여
+      map.setBounds(bounds, 80, 80, 80, 80); 
     } else if (polylineRef.current) {
       polylineRef.current.setMap(null);
       polylineRef.current = null;
@@ -403,6 +410,8 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
           transform: 'translateZ(0)' 
         }} 
       />
+      
+      {/* 지도 로딩 중일 때 보여줄 예쁜 스켈레톤 UI입니다. */}
       {!isReady && (
         <div className="absolute inset-0 bg-gray-50 flex items-center justify-center z-10">
           <div className="flex flex-col items-center gap-2">
@@ -411,16 +420,8 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
           </div>
         </div>
       )}
-      {isLoading && stations.length === 0 && (
-        <div className="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-20 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-xs font-black text-blue-600 uppercase tracking-widest">Updating Map...</p>
-          </div>
-        </div>
-      )}
 
-      {/* 내 위치 버튼 - 잘림 방지를 위해 위치 조정 (bottom-6 -> bottom-24 on mobile) */}
+      {/* 내 위치로 지도를 돌리는 Compass 버튼입니다. */}
       <button 
         onClick={handleMyLocation}
         className="absolute bottom-24 md:bottom-6 right-6 z-30 w-12 h-12 bg-white rounded-2xl shadow-xl border border-gray-100 flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-all active:scale-95"
@@ -429,16 +430,14 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
         <Compass size={24} />
       </button>
 
-      {/* [UX 최적화] 경로 안내 초슬림 바 (하단 중앙) */}
+      {/* 길찾기 정보(시간, 거리)를 보여주는 상단 바입니다. */}
       {routeSummary && (
         <div className="absolute bottom-24 md:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-24px)] max-w-sm bg-gray-900/95 backdrop-blur-xl rounded-[24px] shadow-2xl border border-white/10 p-3 md:p-4 animate-in slide-in-from-bottom-5 duration-500 text-white">
           <div className="flex items-center gap-3 md:gap-4">
-            {/* Left: Icon */}
             <div className="w-10 h-10 bg-blue-600 rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20">
               <Navigation size={20} fill="currentColor" />
             </div>
 
-            {/* Center: Info */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-0.5">
                 <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">경로 안내</span>
@@ -457,7 +456,6 @@ export function StationMap({ stations, onMarkerClick, onMapClick, onViewStationI
               </div>
             </div>
 
-            {/* Right: Actions */}
             <div className="flex items-center gap-1">
               <button 
                 onClick={() => {

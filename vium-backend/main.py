@@ -6,7 +6,8 @@ import os
 
 from app.db.session import engine, Base
 
-# 데이터베이스 테이블 생성
+# 프로젝트 실행 시 필요한 DB 테이블들을 자동으로 생성해주는 코드입니다.
+# Base.metadata에 등록된 모델들을 바탕으로 실제 데이터베이스에 테이블을 만들어줍니다.
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -15,7 +16,8 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS 설정: 명시적인 Origins 리스트 관리
+# [CORS 설정] 프론트엔드(React)와 백엔드 간의 통신 허용 목록입니다.
+# 로컬 개발 환경과 실제 배포된 도메인에서 API에 접근할 수 있도록 보안 설정을 해두었습니다.
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -35,13 +37,15 @@ app.add_middleware(
     expose_headers=["*"]
 )
 
-# 정적 파일 서빙 설정 (사진 업로드용)
+# 고장 제보 시 사용자가 업로드한 사진을 저장하고 브라우저에서 볼 수 있게 설정하는 부분입니다.
+# 'static' 폴더가 실제 서버 경로에 없으면 에러가 날 수 있어서, 없으면 자동으로 생성하게끔 짰습니다.
 static_path = os.path.join(os.path.dirname(__file__), "static")
 if not os.path.exists(static_path):
     os.makedirs(static_path)
 app.mount("/static", StaticFiles(directory=static_path), name="static")
 
-# API 라우터 등록
+# 기능별로 깔끔하게 나눠놓은 라우터들을 메인 앱에 등록합니다.
+# 이렇게 나눠놓아야 나중에 유지보수하기가 훨씬 편하더라구요.
 from app.api.v1 import auth, endpoints, hardware, payments
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(endpoints.router, prefix="/api/v1")
@@ -50,7 +54,7 @@ app.include_router(payments.router, prefix="/api/v1/payments", tags=["Payment"])
 
 @app.get("/")
 async def root():
-    """서버 상태 확인용 헬스 체크 엔드포인트"""
+    """서버가 정상적으로 구동 중인지 확인하는 간단한 테스트용 엔드포인트입니다."""
     return {
         "status": "online",
         "message": "VIUM Backend API Server is running.",

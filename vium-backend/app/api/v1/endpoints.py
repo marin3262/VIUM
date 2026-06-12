@@ -20,22 +20,24 @@ router = APIRouter()
 
 @router.get("/stations", response_model=List[schemas.Station])
 def read_stations(db: Session = Depends(get_db)):
-    """전체 충전소 목록을 조회합니다."""
+    """등록된 모든 충전소 목록을 가져오는 API입니다. 지도에 마커를 뿌려줄 때 사용해요."""
     stations = db.query(models.Station).all()
     results = []
     for s in stations:
         station_dto = schemas.Station.model_validate(s)
-        # VISIBLE 상태인 리뷰만 포함
+        # 삭제되지 않고 'VISIBLE' 상태인 리뷰들만 골라서 보여줍니다.
         station_dto.reviews = [r for r in station_dto.reviews if r.status == "VISIBLE"]
 
-        # Redis에서 실시간 배터리 및 점유 사용자 정보 가져오기
+        # Redis에 저장된 실시간 배터리 정보랑 점유 중인 유저 정보를 가져와서 합쳐줘요.
+        # DB 부하를 줄이기 위해 자주 변하는 데이터는 Redis에서 관리하고 있습니다!
         battery_level, active_user_id = get_station_battery(s.station_id)
         station_dto.current_battery = battery_level
 
-        # [수정]: 충전 중인 충전기에 실제 사용자/세션 ID 매핑
+        # 현재 충전 중이거나 주차 중인 충전기에 실제 사용자 ID를 연결해주는 로직이에요.
+        # 화면에서 누가 사용 중인지 실시간으로 보여주기 위해 꼭 필요하더라구요.
         for charger in station_dto.chargers:
             if charger.status in ["Charging", "Occupied"]:
-                # DB에 저장된 최신 정보 반영
+                # DB에서 가장 따끈따끈한 최신 정보를 찾아서 매핑해줍니다.
                 db_charger = next((c for c in s.chargers if c.charger_id == charger.charger_id), None)
                 if db_charger:
                     charger.active_user_id = db_charger.active_user_id
@@ -46,16 +48,18 @@ def read_stations(db: Session = Depends(get_db)):
 
 @router.get("/users/me", response_model=schemas.UserProfile)
 def read_user_me(current_user: models.User = Depends(get_current_user)):
+    """현재 로그인한 내 정보를 가져옵니다. 마이페이지 같은 곳에서 쓰여요."""
     return current_user
 
 @router.delete("/users/me", response_model=schemas.ActionResponse)
 def delete_user_me(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    """회원 탈퇴 및 연관 데이터 삭제"""
+    """회원 탈퇴를 처리합니다. 유저 정보뿐만 아니라 그동안 쌓인 로그들도 깔끔하게 정리해줘요."""
     try:
         user = db.merge(current_user)
         user_id = user.user_id
 
-        # 연관 데이터 수동 삭제 (cascade 제약 조건 보강)
+        # 외래키 제약 조건 때문에 에러가 날 수 있어서, 연관된 데이터들을 수동으로 먼저 지워줍니다.
+        # 마일리지, 리뷰, 제보, 세션 정보 등을 순서대로 싹 지워야 안전하게 탈퇴 처리가 되더라구요.
         db.query(models.MileageLog).filter(models.MileageLog.user_id == user_id).delete(synchronize_session=False)
         db.query(models.Review).filter(models.Review.user_id == user_id).delete(synchronize_session=False)
         db.query(models.Report).filter(models.Report.user_id == user_id).delete(synchronize_session=False)
@@ -67,6 +71,7 @@ def delete_user_me(db: Session = Depends(get_db), current_user: models.User = De
         return {"success": True, "message": "회원 탈퇴가 완료되었습니다."}
     except Exception as e:
         db.rollback()
+        # 어디서 에러가 났는지 로그를 남겨두면 나중에 디버깅할 때 진짜 편해요!
         print(f"💥 [Withdrawal Error]: {e}")
         raise HTTPException(status_code=500, detail="탈퇴 처리 중 오류가 발생했습니다.")
 
@@ -77,7 +82,7 @@ def create_station_review(
     db: Session = Depends(get_db), 
     current_user: models.User = Depends(get_current_user)
 ):
-    """리뷰 작성 및 보상 지급"""
+    """새로운 리뷰를 작성하고, 작성해준 고마움의 표시로 마일리지를 지급합니다."""
     station = db.query(models.Station).filter(models.Station.station_id == station_id).first()
     if not station:
         raise HTTPException(status_code=404, detail="충전소를 찾을 수 없습니다.")
@@ -94,7 +99,7 @@ def create_station_review(
     )
     db.add(new_review)
 
-    # 마일리지 지급
+    # 리뷰 쓰면 100포인트를 적립해줍니다! 포인트 쌓이는 재미가 있어야 리뷰를 잘 써주실 것 같았어요.
     reward_amount = 100
     current_user.mileage_balance += reward_amount
     db.add(models.MileageLog(
@@ -106,7 +111,7 @@ def create_station_review(
     db.commit()
     db.refresh(current_user)
 
-    # 리뷰 작성 성공 알림 발송
+    # 리뷰가 잘 등록됐다고 유저한테 푸시 알림도 쏴줍니다. 실시간 피드백이 중요하니까요!
     trigger_push_notification(db, "✍️ 리뷰 등록 완료", f"{station.station_name} 리뷰가 정상 등록되어 {reward_amount}P가 지급되었습니다.", user_id=current_user.user_id, tag=f"review-{new_review.id}", n_type="SUCCESS")
 
     return {
@@ -123,11 +128,12 @@ def update_review(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """자신의 리뷰 수정"""
+    """내가 쓴 리뷰를 수정합니다. 점수나 내용을 고치고 싶을 때 사용해요."""
     review = db.query(models.Review).filter(models.Review.id == review_id, models.Review.user_id == current_user.user_id).first()
     if not review:
         raise HTTPException(status_code=404, detail="리뷰를 찾을 수 없습니다.")
 
+    # 넘어온 데이터가 있을 때만 업데이트해주는 방식으로 짰습니다.
     if review_in.rating is not None:
         review.rating = review_in.rating
     if review_in.content is not None:
@@ -142,12 +148,13 @@ def delete_review(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """자신의 리뷰 삭제 및 마일리지 회수"""
+    """리뷰를 삭제합니다. 리뷰를 지우면 공정성을 위해 지급했던 마일리지도 다시 회수해요!"""
     review = db.query(models.Review).filter(models.Review.id == review_id, models.Review.user_id == current_user.user_id).first()
     if not review:
         raise HTTPException(status_code=404, detail="리뷰를 찾을 수 없습니다.")
 
-    # 마일리지 회수 (-100P)
+    # 마일리지 회수 로직 (-100P)
+    # 어뷰징 방지를 위해 리뷰 삭제 시 포인트를 다시 깎는 정책을 세웠습니다.
     penalty = 100
     current_user.mileage_balance = max(0, current_user.mileage_balance - penalty)
     db.add(models.MileageLog(
@@ -163,7 +170,7 @@ def delete_review(
 
 @router.get("/admin/reviews", response_model=List[schemas.Review])
 def read_all_reviews(db: Session = Depends(get_db), admin: models.User = Depends(get_current_admin_user)):
-    """관리자 전용: 전체 리뷰 목록 조회"""
+    """[관리자 전용] 서비스에 올라온 모든 리뷰를 최신순으로 모아서 보여줍니다. 모니터링용이에요!"""
     return db.query(models.Review).order_by(models.Review.created_at.desc()).all()
 
 @router.patch("/admin/reviews/{review_id}/status", response_model=schemas.ActionResponse)
@@ -173,7 +180,10 @@ def update_review_status_admin(
     db: Session = Depends(get_db), 
     admin: models.User = Depends(get_current_admin_user)
 ):
-    """관리자 전용: 리뷰 노출 상태 변경"""
+    """
+    [관리자 전용] 부적절한 리뷰를 숨기거나 다시 복구하는 기능입니다. 
+    리뷰가 숨겨지면 유저의 '신뢰도 점수'를 깎아서 클린한 커뮤니티를 유지하려고 노력했습니다.
+    """
     review = db.query(models.Review).filter(models.Review.id == review_id).first()
     if not review:
         raise HTTPException(status_code=404, detail="리뷰를 찾을 수 없습니다.")
@@ -182,9 +192,9 @@ def update_review_status_admin(
         user = db.query(models.User).filter(models.User.user_id == review.user_id).first()
         if user:
             if update_in.status == "HIDDEN" and review.status == "VISIBLE":
-                user.trust_score = max(0, user.trust_score - 10)
+                user.trust_score = max(0, user.trust_score - 10) # 나쁜 리뷰는 점수 삭감!
             elif update_in.status == "VISIBLE" and review.status == "HIDDEN":
-                user.trust_score = min(100, user.trust_score + 10)
+                user.trust_score = min(100, user.trust_score + 10) # 오해였다면 점수 복구!
 
     review.status = update_in.status
     db.commit()
@@ -199,11 +209,16 @@ async def create_report(
     db: Session = Depends(get_db), 
     current_user: models.User = Depends(get_current_user)
 ):
-    """고장 제보 등록"""
+    """
+    사용자가 고장 난 충전기를 제보할 때 실행됩니다. 
+    현장 사진을 같이 올려주시면 관리자가 판단하기 훨씬 좋겠죠? 
+    이미지는 서버 용량을 아끼기 위해 압축해서 저장하는 유틸리티를 만들어 썼습니다.
+    """
     charger = db.query(models.Charger).filter(models.Charger.charger_id == charger_id).first()
     if not charger:
         raise HTTPException(status_code=404, detail="충전기를 찾을 수 없습니다.")
 
+    # 사진 압축 저장 로직
     image_url = save_compressed_image(await image.read(), image.filename) if image else None
 
     new_report = models.Report(
@@ -220,7 +235,7 @@ async def create_report(
 
 @router.get("/reports", response_model=List[schemas.Report])
 def read_all_reports(db: Session = Depends(get_db), admin: models.User = Depends(get_current_admin_user)):
-    """관리자 전용: 전체 제보 목록 조회"""
+    """[관리자 전용] 접수된 모든 고장 제보들을 확인하는 리스트입니다."""
     return db.query(models.Report).order_by(models.Report.created_at.desc()).all()
 
 @router.patch("/reports/{report_id}", response_model=schemas.ActionResponse)
@@ -230,7 +245,10 @@ def update_report_status(
     db: Session = Depends(get_db),
     admin: models.User = Depends(get_current_admin_user)
 ):
-    """관리자 전용: 제보 승인/반려 및 보상 지급"""
+    """
+    [관리자 전용] 제보 내용을 확인하고 승인하거나 반려합니다. 
+    승인하면 제보자에게 보상 마일리지를 드리고, 충전기 상태를 자동으로 '점검 중'으로 바꿔줘요.
+    """
     report = db.query(models.Report).filter(models.Report.report_id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="제보를 찾을 수 없습니다.")
@@ -243,7 +261,7 @@ def update_report_status(
 
     if user:
         if update_in.status == "APPROVED":
-            # 승인 시 보상 지급 (500P) 및 신뢰도 +5점
+            # 정직한 제보는 500P와 신뢰도 점수를 드립니다!
             reward = 500
             user.mileage_balance += reward
             user.trust_score = min(100, user.trust_score + 5)
@@ -253,15 +271,14 @@ def update_report_status(
                 description=f"고장 제보 승인 보상: {report.charger_id}",
                 amount=reward
             ))
-            # 제보 승인 알림 발송
             trigger_push_notification(db, "🛡️ 제보 승인 알림", f"보내주신 제보가 승인되어 {reward}P가 지급되었습니다. (신뢰도 +5점)", user_id=user.user_id)
 
-            # 충전기 상태를 'Faulty'로 변경
+            # 승인된 충전기는 자동으로 'Faulty(점검 중)' 상태로 전환!
             charger = db.query(models.Charger).filter(models.Charger.charger_id == report.charger_id).first()
             if charger:
                 charger.status = "Faulty"
         elif update_in.status == "REJECTED":
-            # 허위 제보 반려 시 신뢰도 -5점
+            # 허위 제보는 신뢰도 점수를 깎아서 어뷰징을 방어해요.
             user.trust_score = max(0, user.trust_score - 5)
             trigger_push_notification(db, "⚠️ 제보 반려 안내", "보내주신 제보는 확인 결과 이상이 없는 것으로 판명되었습니다. (신뢰도 -5점)", user_id=user.user_id, n_type="INFO")
 
